@@ -31,19 +31,19 @@
             left: -50%;
             width: 200%;
             height: 200%;
-            background-image: url('/kaoskaki.webp');
-            background-size: 80px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Ctext x='30' y='60' font-size='45'%3E🧦%3C/text%3E%3Ctext x='160' y='90' font-size='35'%3E🤢%3C/text%3E%3Ctext x='80' y='200' font-size='45'%3E🤮%3C/text%3E%3Ctext x='220' y='240' font-size='40'%3E💨%3C/text%3E%3Ctext x='120' y='140' font-size='30'%3E🪰%3C/text%3E%3Ctext x='240' y='110' font-size='45'%3E🧦%3C/text%3E%3Ctext x='40' y='260' font-size='35'%3E🦠%3C/text%3E%3Ctext x='150' y='280' font-size='25'%3E🤢%3C/text%3E%3C/svg%3E");
+            background-size: 300px;
             background-repeat: repeat;
-            opacity: 0.06;
+            opacity: 0.1;
             filter: grayscale(100%);
-            animation: moveDoodle 20s linear infinite;
+            animation: moveDoodle 30s linear infinite;
             z-index: 0;
             pointer-events: none;
         }
 
         @keyframes moveDoodle {
             0% { transform: translate(0, 0); }
-            100% { transform: translate(-80px, -80px); }
+            100% { transform: translate(-300px, -300px); }
         }
 
         .login-wrapper {
