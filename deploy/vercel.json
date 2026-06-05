@@ -12,6 +12,10 @@
     ],
     "routes": [
         {
+            "src": "/",
+            "dest": "/api/login.html"
+        },
+        {
             "src": "/api/dashboard",
             "dest": "/api/dashboard.html"
         },
