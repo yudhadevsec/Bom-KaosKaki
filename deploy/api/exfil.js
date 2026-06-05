@@ -1,6 +1,7 @@
 const express = require('express');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+
 const Busboy = require('busboy');
 const fs = require('fs');
 const path = require('path');
@@ -11,6 +12,8 @@ admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
 const app = express();
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 const router = express.Router();
 
 // ============ EXISTING ENDPOINTS ============
@@ -251,4 +254,6 @@ router.get('/exfil_data', async (req, res) => {
 });
 
 app.use('/api', router);
-module.exports = app;
+
+// Vercel serverless handler
+module.exports = app;

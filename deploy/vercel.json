@@ -2,12 +2,8 @@
     "version": 2,
     "builds": [
         {
-            "src": "api/**/*.js",
+            "src": "api/exfil.js",
             "use": "@vercel/node"
-        },
-        {
-            "src": "api/**/*.html",
-            "use": "@vercel/static"
         },
         {
             "src": "public/**",
@@ -17,15 +13,23 @@
     "routes": [
         {
             "src": "/api/(.*)",
-            "dest": "/api/$1"
+            "dest": "/api/exfil.js"
         },
         {
-            "src": "/(.*)\\.(js|css|png|jpg|jpeg|gif|ico|svg|webp)",
-            "dest": "/public/$1.$2"
+            "src": "/login",
+            "dest": "/public/login.html"
         },
         {
-            "src": "/(.*)",
-            "dest": "/api/dashboard.html"
+            "src": "/dashboard",
+            "dest": "/public/dashboard.html"
+        },
+        {
+            "src": "/public/(.*)",
+            "dest": "/public/$1"
+        },
+        {
+            "src": "/",
+            "dest": "/public/login.html"
         }
     ]
 }
