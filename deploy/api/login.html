@@ -31,11 +31,10 @@
             left: -50%;
             width: 200%;
             height: 200%;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Ctext x='30' y='60' font-size='45'%3E🧦%3C/text%3E%3Ctext x='160' y='90' font-size='35'%3E🤢%3C/text%3E%3Ctext x='80' y='200' font-size='45'%3E🤮%3C/text%3E%3Ctext x='220' y='240' font-size='40'%3E💨%3C/text%3E%3Ctext x='120' y='140' font-size='30'%3E🪰%3C/text%3E%3Ctext x='240' y='110' font-size='45'%3E🧦%3C/text%3E%3Ctext x='40' y='260' font-size='35'%3E🦠%3C/text%3E%3Ctext x='150' y='280' font-size='25'%3E🤢%3C/text%3E%3C/svg%3E");
-            background-size: 300px;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120' viewBox='0 0 120 120' fill='none' stroke='%23111' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cg transform='translate(20,20) scale(1.5)'%3E%3Cpath d='M12,4 L12,14 C12,18 8,20 4,20 L2,20 C0.89,20 0,19.1 0,18 C0,16.89 0.89,16 2,16 L6,16 L6,4 C6,2.89 6.89,2 8,2 L10,2 C11.1,2 12,2.89 12,4 Z' /%3E%3C/g%3E%3Cg transform='translate(80,20) scale(1)'%3E%3Cpath d='M4,4 Q8,8 4,12 T4,20 M12,2 Q16,6 12,10 T12,18 M20,6 Q24,10 20,14 T20,22' /%3E%3C/g%3E%3Cg transform='translate(20,80) scale(1)'%3E%3Cpath d='M12,12 A4,4 0 1,1 12,20 A4,4 0 1,1 12,12 M12,12 L6,6 M12,12 L18,6 M10,14 L4,16 M14,14 L20,16' /%3E%3C/g%3E%3Cg transform='translate(95,80) scale(-1.5, 1.5)'%3E%3Cpath d='M12,4 L12,14 C12,18 8,20 4,20 L2,20 C0.89,20 0,19.1 0,18 C0,16.89 0.89,16 2,16 L6,16 L6,4 C6,2.89 6.89,2 8,2 L10,2 C11.1,2 12,2.89 12,4 Z' /%3E%3C/g%3E%3C/svg%3E");
+            background-size: 150px;
             background-repeat: repeat;
-            opacity: 0.1;
-            filter: grayscale(100%);
+            opacity: 0.05;
             animation: moveDoodle 30s linear infinite;
             z-index: 0;
             pointer-events: none;
@@ -43,7 +42,7 @@
 
         @keyframes moveDoodle {
             0% { transform: translate(0, 0); }
-            100% { transform: translate(-300px, -300px); }
+            100% { transform: translate(-150px, -150px); }
         }
 
         .login-wrapper {
