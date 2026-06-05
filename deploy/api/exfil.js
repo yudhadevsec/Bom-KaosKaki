@@ -7,7 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-const serviceAccount = require('../firebase/serviceAccount.json');
+const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
+    ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
+    : require('../firebase/serviceAccount.json');
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 

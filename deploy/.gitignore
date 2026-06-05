@@ -1,2 +1,4 @@
 .vercel
 .env*
+
+firebase/serviceAccount.json
