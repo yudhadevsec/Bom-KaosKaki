@@ -7,7 +7,7 @@ const serviceAccount = {
   "type": "service_account",
   "project_id": "bom-kaoskaki-db",
   "private_key_id": "418557051fa3a10205323470cb2fd7e448af6353",
-  "private_key": process.env.FIREBASE_PRIVATE_KEY ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\\\n/g, '\\n') : "-----BEGIN PRIVATE KEY-----\\nYOUR_PRIVATE_KEY_HERE\\n-----END PRIVATE KEY-----\\n",
+  "private_key": process.env.FIREBASE_PRIVATE_KEY_B64 ? Buffer.from(process.env.FIREBASE_PRIVATE_KEY_B64, 'base64').toString('utf8') : "-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n",
   "client_email": "firebase-adminsdk-fbsvc@bom-kaoskaki-db.iam.gserviceaccount.com",
   "client_id": "115575027255595530608",
   "auth_uri": "https://accounts.google.com/o/oauth2/auth",
@@ -57,7 +57,8 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     if (req.method === 'OPTIONS') return res.status(200).end();
 
-    const url = new URL(req.url, `http://${req.headers.host}`);
+    const fullUrl = req.url.startsWith('http') ? req.url : `http://${req.headers.host}${req.url}`;
+    const url = new URL(fullUrl);
     const path = url.pathname.replace('/api/', '');
     const typeQuery = url.searchParams.get('type');
     const ip = getClientIP(req);
