@@ -8,12 +8,20 @@
         {
             "src": "api/**/*.html",
             "use": "@vercel/static"
+        },
+        {
+            "src": "api/**/*.webp",
+            "use": "@vercel/static"
         }
     ],
     "routes": [
         {
             "src": "/",
             "dest": "/api/login.html"
+        },
+        {
+            "src": "/kaoskaki.webp",
+            "dest": "/api/kaoskaki.webp"
         },
         {
             "src": "/api/dashboard",
