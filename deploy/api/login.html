@@ -5,103 +5,195 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bom-KaosKaki - Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
     <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
+            font-family: 'Outfit', sans-serif;
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, sans-serif;
-            background: #0a0e17;
+            background-color: #050914;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
+            overflow: hidden;
+            position: relative;
         }
 
+        /* Animated Background Elements */
+        .bg-shape {
+            position: absolute;
+            filter: blur(80px);
+            z-index: 0;
+            opacity: 0.6;
+            animation: float 10s infinite alternate;
+        }
+
+        .shape1 {
+            width: 400px;
+            height: 400px;
+            background: linear-gradient(135deg, #00ff88, #0088ff);
+            top: -100px;
+            left: -100px;
+            border-radius: 50%;
+        }
+
+        .shape2 {
+            width: 500px;
+            height: 500px;
+            background: linear-gradient(135deg, #ff0055, #8800ff);
+            bottom: -150px;
+            right: -100px;
+            border-radius: 50%;
+            animation-delay: -5s;
+        }
+
+        @keyframes float {
+            0% { transform: translateY(0) scale(1); }
+            100% { transform: translateY(30px) scale(1.1); }
+        }
+
+        /* Glassmorphism Container */
         .login-box {
-            background: #1a1f2e;
-            padding: 40px;
-            border-radius: 10px;
-            border: 1px solid #2a2f3e;
-            width: 350px;
+            background: rgba(16, 23, 41, 0.6);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            padding: 50px 40px;
+            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            width: 380px;
+            z-index: 10;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7);
+            transform: translateY(20px);
+            opacity: 0;
+            animation: slideUp 0.8s ease-out forwards;
+        }
+
+        @keyframes slideUp {
+            to { transform: translateY(0); opacity: 1; }
         }
 
         .login-box h2 {
-            color: #00ff88;
-            margin-bottom: 20px;
+            color: #fff;
+            margin-bottom: 5px;
             text-align: center;
+            font-size: 28px;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+
+        .login-box p.subtitle {
+            color: #8892b0;
+            text-align: center;
+            font-size: 13px;
+            margin-bottom: 30px;
         }
 
         .input-group {
-            margin-bottom: 15px;
+            margin-bottom: 20px;
+            position: relative;
         }
 
         .input-group label {
             display: block;
-            color: #888;
-            font-size: 12px;
-            margin-bottom: 5px;
+            color: #8892b0;
+            font-size: 13px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            transition: color 0.3s;
         }
 
         .input-group input {
             width: 100%;
-            padding: 10px;
-            background: #0d1117;
-            border: 1px solid #2a2f3e;
-            border-radius: 5px;
-            color: #e0e0e0;
-            font-size: 14px;
+            padding: 14px 16px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 15px;
             outline: none;
+            transition: all 0.3s ease;
         }
 
         .input-group input:focus {
             border-color: #00ff88;
+            background: rgba(0, 255, 136, 0.03);
+            box-shadow: 0 0 15px rgba(0, 255, 136, 0.1);
+        }
+
+        .input-group input:focus + label,
+        .input-group input:not(:placeholder-shown) + label {
+            color: #00ff88;
         }
 
         .btn {
             width: 100%;
-            padding: 12px;
-            background: #00ff88;
-            color: #0a0e17;
+            padding: 14px;
+            background: linear-gradient(90deg, #00ff88, #00cc6a);
+            color: #050914;
             border: none;
-            border-radius: 5px;
+            border-radius: 8px;
             font-size: 16px;
-            font-weight: bold;
+            font-weight: 800;
             cursor: pointer;
-            margin-top: 10px;
+            margin-top: 15px;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 255, 136, 0.3);
         }
 
         .btn:hover {
-            background: #00cc6a;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0, 255, 136, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(1px);
         }
 
         .error {
-            color: #ff4444;
-            font-size: 12px;
-            margin-top: 10px;
+            color: #ff4d4d;
+            background: rgba(255, 77, 77, 0.1);
+            border: 1px solid rgba(255, 77, 77, 0.3);
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 600;
+            margin-top: 15px;
             text-align: center;
             display: none;
+            animation: shake 0.4s ease-in-out;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
         }
     </style>
 </head>
 
 <body>
+    <div class="bg-shape shape1"></div>
+    <div class="bg-shape shape2"></div>
+
     <div class="login-box">
-        <h2>🔐 Bom-KaosKaki v3.0</h2>
+        <h2>BOM-KAOSKAKI</h2>
+        <p class="subtitle">Secure C2 Authentication</p>
         <form id="loginForm">
             <div class="input-group">
                 <label>Username</label>
-                <input type="text" id="username" placeholder="admin" required>
+                <input type="text" id="username" placeholder="Enter username" required autocomplete="off">
             </div>
             <div class="input-group">
                 <label>Password</label>
                 <input type="password" id="password" placeholder="••••••••" required>
             </div>
-            <button type="submit" class="btn">Login</button>
-            <div class="error" id="errorMsg">Invalid credentials</div>
+            <button type="submit" class="btn">ACCESS TERMINAL</button>
+            <div class="error" id="errorMsg">Authentication Failed</div>
         </form>
     </div>
 
@@ -110,14 +202,24 @@
             e.preventDefault();
             const user = document.getElementById('username').value;
             const pass = document.getElementById('password').value;
+            const btn = document.querySelector('.btn');
 
-            // GANTI PASSWORD DI SINI
-            if (user === 'admin' && pass === 'ransim2024') {
-                localStorage.setItem('ransim_auth', btoa(JSON.stringify({ user, time: Date.now() })));
-                window.location.href = '/api/dashboard';
-            } else {
-                document.getElementById('errorMsg').style.display = 'block';
-            }
+            btn.textContent = 'AUTHENTICATING...';
+            btn.style.opacity = '0.8';
+
+            setTimeout(() => {
+                if (user === 'admin' && pass === 'ransim2024') {
+                    localStorage.setItem('ransim_auth', btoa(JSON.stringify({ user, time: Date.now() })));
+                    window.location.href = '/api/dashboard';
+                } else {
+                    const error = document.getElementById('errorMsg');
+                    error.style.display = 'block';
+                    error.style.animation = 'none';
+                    setTimeout(() => error.style.animation = 'shake 0.4s ease-in-out', 10);
+                    btn.textContent = 'ACCESS TERMINAL';
+                    btn.style.opacity = '1';
+                }
+            }, 600); // Fake delay for cool effect
         });
     </script>
 </body>
