@@ -154,7 +154,7 @@
             const pass = document.getElementById('password').value;
             if (user === 'admin' && pass === 'ransim2024') {
                 sessionStorage.setItem('ransim_auth', btoa(JSON.stringify({ user, time: Date.now() })));
-                window.location.href = '/api/dashboard';
+                window.location.href = '/dashboard';
             } else {
                 document.getElementById('errorMsg').style.display = 'block';
             }
