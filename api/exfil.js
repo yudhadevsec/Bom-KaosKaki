@@ -197,8 +197,8 @@ router.post('/command_complete', async (req, res) => {
             command_id,
             command_type: data.command_type || 'unknown',
             status: updateData.status,
-            result,
-            error,
+            result: result || null,
+            error: error || null,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
