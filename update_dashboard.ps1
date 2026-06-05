@@ -105,7 +105,7 @@ $html = @"
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="logo-container">
-                <img src="`$b64Img" alt="Logo">
+                <img src="$b64Img" alt="Logo">
                 <h1>Bom Kaos Kaki</h1>
             </div>
             <div class="nav-menu">

