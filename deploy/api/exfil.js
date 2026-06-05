@@ -255,7 +255,7 @@ router.get('/exfil_data', async (req, res) => {
     }
 });
 
-router.get('/', async (req, res) => {
+router.get('/exfil', async (req, res) => {
     if (req.query.type === 'dashboard') {
         try {
             const sessionsSnap = await db.collection('agents').orderBy('lastHeartbeat', 'desc').get();
