@@ -129,8 +129,6 @@ router.get('/get_commands', async (req, res) => {
         const snapshot = await db.collection('commands')
             .where('target_session', 'in', [sessionId, 'all'])
             .where('status', '==', 'pending')
-            .where('scheduled_time', '<=', new Date().toISOString())
-            .orderBy('scheduled_time', 'asc')
             .limit(10)
             .get();
 
