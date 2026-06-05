@@ -1,0 +1,11 @@
+{
+    "$schema": "https://json.schemastore.org/package",
+    "name": "ransim-aio-v3",
+    "version": "3.0.0",
+    "description": "RANSIM-AIO C2 Serverless Backend",
+    "main": "api/exfil.js",
+    "dependencies": {
+        "firebase-admin": "^11.11.0",
+        "node-fetch": "^2.7.0"
+    }
+}
