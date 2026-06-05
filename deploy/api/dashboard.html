@@ -264,7 +264,7 @@
                 const btn = document.querySelector('.refresh-btn');
                 btn.textContent = 'Loading...';
 
-                const resp = await fetch(API + '?type=dashboard&_=' + Date.now());
+                const resp = await fetch(API + '/dashboard_data?_=' + Date.now());
                 const data = await resp.json();
 
                 document.getElementById('totalSessions').textContent = data.sessions?.length || 0;
