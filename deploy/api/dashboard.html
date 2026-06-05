@@ -40,7 +40,7 @@
             border-radius: 6px;
             font-size: 14px;
             font-weight: 500;
-            transition: all 0.2s;
+            transition: all 0.1s;
             cursor: pointer;
         }
         .nav-item:hover { background: #f4f4f5; color: #111111; }
@@ -65,13 +65,13 @@
         .refresh-btn {
             background-color: #ffffff; color: #111111; border: 1px solid #e0e0e0;
             padding: 8px 16px; border-radius: 6px; cursor: pointer;
-            font-size: 13px; font-weight: 500; transition: all 0.2s;
+            font-size: 13px; font-weight: 500; transition: all 0.1s;
         }
         .refresh-btn:hover { border-color: #111111; }
 
         .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 40px; }
-        .stat-card { background: #ffffff; border: 1px solid #eaeaeb; border-radius: 8px; padding: 24px; transition: transform 0.2s; }
-        .stat-card:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        .stat-card { background: #ffffff; border: 1px solid #eaeaeb; border-radius: 8px; padding: 24px; transition: box-shadow 0.1s; }
+        .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
         .stat-card h3 { font-size: 28px; font-weight: 600; margin-bottom: 4px; }
         .stat-card p { color: #666666; font-size: 13px; font-weight: 500; }
 
@@ -92,7 +92,7 @@
         .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 500; }
         .badge-active { background: #e6f4ea; color: #137333; }
         .badge-paid { background: #fef7e0; color: #b06000; }
-        .action-btn { background: transparent; color: #111111; border: 1px solid #e0e0e0; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+        .action-btn { background: transparent; color: #111111; border: 1px solid #e0e0e0; padding: 4px 12px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.1s; }
         .action-btn:hover { border-color: #111111; background: #fafafa; }
     </style>
 </head>
@@ -358,4 +358,5 @@
     </script>
 </body>
 </html>
+
 
