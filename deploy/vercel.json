@@ -8,47 +8,23 @@
         {
             "src": "api/**/*.html",
             "use": "@vercel/static"
+        },
+        {
+            "src": "public/**",
+            "use": "@vercel/static"
         }
     ],
     "routes": [
         {
-            "src": "/api/exfil",
-            "dest": "/api/exfil.js"
+            "src": "/api/(.*)",
+            "dest": "/api/$1"
         },
         {
-            "src": "/api/heartbeat",
-            "dest": "/api/exfil.js"
+            "src": "/(.*)\\.(js|css|png|jpg|jpeg|gif|ico|svg|webp)",
+            "dest": "/public/$1.$2"
         },
         {
-            "src": "/api/get_commands",
-            "dest": "/api/exfil.js"
-        },
-        {
-            "src": "/api/send_command",
-            "dest": "/api/exfil.js"
-        },
-        {
-            "src": "/api/command_complete",
-            "dest": "/api/exfil.js"
-        },
-        {
-            "src": "/api/agents",
-            "dest": "/api/exfil.js"
-        },
-        {
-            "src": "/api/agents/(.*)",
-            "dest": "/api/exfil.js"
-        },
-        {
-            "src": "/api/exfil_data",
-            "dest": "/api/exfil.js"
-        },
-        {
-            "src": "/api/dashboard",
-            "dest": "/api/dashboard.html"
-        },
-        {
-            "src": "/",
+            "src": "/(.*)",
             "dest": "/api/dashboard.html"
         }
     ]
