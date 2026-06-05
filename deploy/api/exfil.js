@@ -139,7 +139,7 @@ router.get('/get_commands', async (req, res) => {
             commands.push({ id: doc.id, ...doc.data() });
         });
 
-        res.json({ success: true, commands, count: commands.length });
+        res.json({ success: true, data: { commands, count: commands.length } });
     } catch (err) {
         console.error('Get commands error:', err);
         res.json({ success: true, commands: [], count: 0 });
