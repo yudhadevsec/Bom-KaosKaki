@@ -1,8 +1,8 @@
 {
     "$schema": "https://json.schemastore.org/package",
-    "name": "ransim-aio-v3",
+    "name": "bom-kaoskaki-v3",
     "version": "3.0.0",
-    "description": "RANSIM-AIO C2 Serverless Backend",
+    "description": "Bom-KaosKaki C2 Serverless Backend",
     "main": "api/exfil.js",
     "dependencies": {
         "firebase-admin": "^11.11.0",

