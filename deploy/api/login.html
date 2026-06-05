@@ -21,6 +21,29 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .doodle-bg {
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background-image: url('/kaoskaki.webp');
+            background-size: 80px;
+            background-repeat: repeat;
+            opacity: 0.06;
+            filter: grayscale(100%);
+            animation: moveDoodle 20s linear infinite;
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        @keyframes moveDoodle {
+            0% { transform: translate(0, 0); }
+            100% { transform: translate(-80px, -80px); }
         }
 
         .login-wrapper {
@@ -30,7 +53,9 @@
             border: 1px solid #eaeaeb;
             border-radius: 8px;
             background: #ffffff;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.02);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.05);
+            position: relative;
+            z-index: 10;
         }
 
         .login-wrapper h2 {
@@ -104,6 +129,7 @@
 </head>
 
 <body>
+    <div class="doodle-bg"></div>
     <div class="login-wrapper">
         <h2>Welcome Back</h2>
         <p>Please enter your credentials</p>
