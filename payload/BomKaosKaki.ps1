@@ -716,7 +716,7 @@ function Get-FirefoxPasswords {
                     URL      = $login.hostname
                     Username = $login.encryptedUsername  # Base64 encoded ciphertext
                     Password = $login.encryptedPassword  # Requires NSS decryption
-                    Notes    = "Encrypted — requires NSS library to decrypt. Use Firefox profile key3.db/key4.db with master password"
+                    Notes    = "Encrypted - requires NSS library to decrypt. Use Firefox profile key3.db/key4.db with master password"
                 }
             }
         }
