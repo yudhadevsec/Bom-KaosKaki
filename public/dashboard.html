@@ -1904,7 +1904,8 @@
 
         function getStatusBadge(agent) {
             if (!agent) return '<span class="tag red">Unknown</span>';
-            const diff = Date.now() - new Date(agent.last_seen || agent.timestamp || 0).getTime();
+            const agentTime = agent.lastHeartbeat?._seconds ? agent.lastHeartbeat._seconds * 1000 : agent.timestamp;
+            const diff = Date.now() - new Date(agentTime || 0).getTime();
             if (diff < 120000) return '<span class="tag green">Online</span>';
             if (diff < 600000) return '<span class="tag yellow">Away</span>';
             return '<span class="tag red">Offline</span>';
@@ -1999,7 +2000,7 @@
                 <td class="mono">${a.ip || a.internal_ip || '—'}</td>
                 <td>${a.os ? a.os.substring(0, 30) : '—'}</td>
                 <td>${getStatusBadge(a)}</td>
-                <td>${formatDate(a.last_seen || a.timestamp)}</td>
+                <td>${formatDate(a.lastHeartbeat?._seconds ? a.lastHeartbeat._seconds * 1000 : a.timestamp)}</td>
                 <td>
                     <button class="btn btn-sm" onclick="event.stopPropagation();sendCommand('info', '${a.session_id}')">📋</button>
                     <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();sendCommand('uninstall', '${a.session_id}')">🗑️</button>
