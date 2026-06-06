@@ -4,10 +4,12 @@ const Busboy = require('busboy');
 const crypto = require('crypto');
 
 // ============ FIREBASE INIT ============
-if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
-    throw new Error('FIREBASE_SERVICE_ACCOUNT environment variable is not set!');
+let serviceAccount;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+} else {
+    serviceAccount = require('../firebase/serviceAccount.json');
 }
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
@@ -143,9 +145,10 @@ router.post('/heartbeat', async (req, res) => {
             sessionId: session_id,
             hostname: hostname || 'unknown',
             username: username || 'unknown',
-            os: os_info || 'unknown',
-            ip: ip || 'unknown',
+            os: os_info || data.os || 'unknown',
+            ip: ip || data.internal_ip || 'unknown',
             isAdmin: is_admin || false,
+
             processId: process_id || null,
             modules: modules || [],
             lastHeartbeat: admin.firestore.FieldValue.serverTimestamp(),

