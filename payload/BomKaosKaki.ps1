@@ -234,13 +234,15 @@ function Invoke-SystemInfo {
 }
 
 # ============ RSA HELPER ============
+$RsaPublicKeyXml = "<RSAKeyValue><Modulus>oPjdX2l+XlDMYvFDJDx9ZpsqAkAT1yf4rG8WoDW2UReMu/ltiQPblPRZm8ICXakmMUSzyBwvC14YrtEu1gIloweUPhezpqk0m77HYgeJHTBUU7sLAh/lsmnYUXvtHmUclsCSNCnPUQUej7IZa9ApvuiWI1YixQvSRAa3c+BEpjhInh5QMLSsSUqwr4LmQdfe4I9b/ZuGQ3ZMtsX6azZ8JABv/GtKkuJrD7CHUHHGWB+Na3a66etNVtlI5zpz2/ZBS0cnBP9PqByPaBh8Xg/nczycwP5n4NcR6wvXV04drEDVqQO47GQr7UmRrObWkp3hAOZlIGd35KBS7JHGUwZPPw==</Modulus><Exponent>AQAB</Exponent></RSAKeyValue>"
+
 function Protect-WithRSA {
     param([string]$PlainText)
     Add-Type -AssemblyName System.Security
-    $rsa = [System.Security.Cryptography.RSA]::Create()
-    $rsa.ImportFromPem($RsaPublicKey)
+    $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider
+    $rsa.FromXmlString($RsaPublicKeyXml)
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($PlainText)
-    $encryptedBytes = $rsa.Encrypt($bytes, [System.Security.Cryptography.RSAEncryptionPadding]::OaepSHA256)
+    $encryptedBytes = $rsa.Encrypt($bytes, $false)
     return [Convert]::ToBase64String($encryptedBytes)
 }
 
