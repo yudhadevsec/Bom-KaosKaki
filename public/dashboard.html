@@ -475,6 +475,11 @@
         }
 
         async function renderOverview() {
+            // Save state before fetching and rebuilding UI
+            const prevSession = document.getElementById('cmdSession')?.value;
+            const prevCmdType = document.getElementById('cmdType')?.value;
+            const prevScript = document.getElementById('execScript')?.value;
+
             const agents = await fetchAgents();
             const exfilAll = await fetchExfilData();
             const totalAgents = agents.length;
@@ -528,19 +533,38 @@
                     </div>
                 </div>
             `;
+            }
+
             const tbody = document.getElementById('overviewAgentsBody');
-            tbody.innerHTML = agents.map(a => `
-                <tr>
-                    <td><code>${escapeHtml(a.sessionId || a.id)}</code></td>
-                    <td>${escapeHtml(a.hostname || '?')}<br><span style="color:#888">${escapeHtml(a.username || '?')}</span></td>
-                    <td>${escapeHtml(a.ip || '?')}</td>
-                    <td>${formatDate(a.lastHeartbeat)}</td>
-                    <td><span class="${getStatusClass(a.lastHeartbeat)}">${getStatusText(a.lastHeartbeat)}</span></td>
-                    <td><button class="action-btn decrypt-btn" onclick="decryptAgent('${a.sessionId || a.id}')">🔓 Decrypt</button><button class="action-btn delete-btn" onclick="deleteAgent('${a.sessionId || a.id}')">🗑️ Delete</button></td>
-                </tr>
-            `).join('');
+            if (tbody) {
+                tbody.innerHTML = agents.map(a => `
+                    <tr>
+                        <td><code>${escapeHtml(a.sessionId || a.id)}</code></td>
+                        <td>${escapeHtml(a.hostname || '?')}<br><span style="color:#888">${escapeHtml(a.username || '?')}</span></td>
+                        <td>${escapeHtml(a.ip || '?')}</td>
+                        <td>${formatDate(a.lastHeartbeat)}</td>
+                        <td><span class="${getStatusClass(a.lastHeartbeat)}">${getStatusText(a.lastHeartbeat)}</span></td>
+                        <td><button class="action-btn decrypt-btn" onclick="decryptAgent('${a.sessionId || a.id}')">🔓 Decrypt</button><button class="action-btn delete-btn" onclick="deleteAgent('${a.sessionId || a.id}')">🗑️ Delete</button></td>
+                    </tr>
+                `).join('');
+            }
+
             const sessionSelect = document.getElementById('cmdSession');
             sessionSelect.innerHTML = '<option value="all">ALL ACTIVE AGENTS</option>' + agents.map(a => `<option value="${a.sessionId || a.id}">${(a.sessionId || a.id).substring(0, 8)}... - ${a.hostname}</option>`).join('');
+
+            // Restore state if they existed
+            if (prevSession) {
+                if (sessionSelect) sessionSelect.value = prevSession;
+            }
+            if (prevCmdType) {
+                const cmdTypeSelect = document.getElementById('cmdType');
+                if (cmdTypeSelect) cmdTypeSelect.value = prevCmdType;
+            }
+            if (prevScript) {
+                const scriptArea = document.getElementById('execScript');
+                if (scriptArea) scriptArea.value = prevScript;
+            }
+
             const cmdType = document.getElementById('cmdType');
             const execDiv = document.getElementById('execParamsDiv');
             cmdType.onchange = () => { execDiv.style.display = cmdType.value === 'exec' ? 'block' : 'none'; };
